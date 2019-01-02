@@ -1,0 +1,247 @@
+let htmlParser = require('./html-parser');
+let { nativeTags, svgTags, mathTags, svgUpperTags } = require('./html-tags');
+let chalk = require('chalk');
+let slog = require('./util-log');
+let tmplCommandAnchorReg = /\u0007\d+\u0007/;
+let upperCaseReg = /[A-Z]/;
+let valuableReg = /^(?:\u0007\d+\u0007)+\s*\?\?/;
+let booleanReg = /^(?:\u0007\d+\u0007)+\s*\?/;
+let updateLinkage = (token, children, pos) => {
+    token.first = false;
+    token.firstElement = false;
+    let prev = children[pos - 1];
+    if (prev) {
+        prev.last = false;
+        if (prev.isText) {
+            prev = children[pos - 2];
+        }
+    }
+    if (prev) {
+        if (!token.isText) {
+            prev.lastElement = false;
+        }
+    } else {
+        if (!token.isText) {
+            token.firstElement = true;
+        }
+    }
+};
+let addChildren = (token, parent) => {
+    if (parent) {
+        let c = parent.children;
+        if (!c) {
+            parent.children = c = [];
+        }
+        if (c.length === 0) {
+            token.first = true;
+            token.firstElement = !token.isText;
+        } else {
+            updateLinkage(token, c, c.length);
+        }
+        token.last = true;
+        if (!token.isText) {
+            token.lastElement = true;
+        }
+        c.push(token);
+        token.isChild = true;
+        token.pId = parent.id;
+    }
+};
+module.exports = (input, htmlFile, walk) => {
+    let ctrls = [];
+    let tokens = [];
+    let id = 0;
+    let tokensMap = Object.create(null);
+    let svgStack = [];
+    let inSVG = false;
+    tokens.__map = tokensMap;
+    htmlParser(input, {
+        start(tag, attrs, unary, {
+            start,
+            end,
+            attrsStart,
+            attrsEnd
+        }) {
+            let lowerTag = tag.toLowerCase();
+            if (htmlFile &&
+                upperCaseReg.test(tag) &&
+                !(inSVG && svgUpperTags[tag])) {
+                slog.ever(chalk.red('[MXC Tip(tmpl-parser)] avoid use ' + tag), 'at', chalk.magenta(htmlFile), 'use', chalk.red(lowerTag), 'instead');
+            }
+            if (lowerTag == 'svg') {
+                inSVG = true;
+                svgStack.push(lowerTag);
+            } else if (lowerTag == 'foreignobject') {
+                //前置有svg标签
+                if (svgStack.length) {
+                    inSVG = false;
+                    svgStack.push(lowerTag);
+                }
+            }
+            let ic = tag.indexOf('-');
+            let ip = tag.indexOf('.');
+            let i = -1;
+            let pfx = '';
+            if (ic != -1 || ip != -1) {
+                if (ic != -1 && ip != -1) {
+                    i = Math.min(ic, ip);
+                } else if (ic != -1) {
+                    i = ic;
+                } else {
+                    i = ip;
+                }
+            }
+            if (i != -1) {
+                pfx = tag.slice(0, i);
+            }
+            let attrsKV = Object.create(null);
+            let token = {
+                id: 't' + id++,
+                tag,
+                pfx,
+                group: i != -1 && i == ip,
+                attrsKV,
+                customTag: !nativeTags[lowerTag] && !svgTags[lowerTag] && !mathTags[lowerTag],
+                hasContent: true,
+                start,
+                end,
+                attrsStart,
+                attrsEnd
+            };
+            tokensMap[token.id] = token;
+            let parent = ctrls[ctrls.length - 1];
+            addChildren(token, parent);
+            ctrls.push(token);
+            tokens.push(token);
+            let temp;
+            for (let i = 0, len = attrs.length, a; i < len; i++) {
+                a = attrs[i];
+                temp = a.name;
+                if (temp == 'mx-view') {
+                    token.hasMxView = true;
+                    token.mxView = a.value;
+                } else if (temp == '_mxs') {
+                    token.mxsKey = a.value;
+                } else if (temp == '_mxrs') {
+                    token.mxsRealKey = a.value;
+                } else if (temp == '_mxv') {
+                    token.mxvAutoKey = a.value;
+                } else if (temp == 'mxv') {
+                    token.mxvKey = a.value;
+                } else if (temp == 'mx-static' || temp == 'mxs') {
+                    token.userStaticKey = a.value || true;
+                } else if (temp.startsWith('*') ||
+                    temp.startsWith('#')) {
+                    token.paramsOrNative = true;
+                } else if (!a.unary && a.value.indexOf('@') > -1) {
+                    token.atAttrContent = true;
+                }
+                if (!a.unary) {
+                    if (a.value.startsWith('\x07') &&
+                        (valuableReg.test(a.value) || booleanReg.test(a.value))) {
+                        token.condAttr = true;
+                    }
+                    temp += '="' + a.value + '"';
+                    if (!tmplCommandAnchorReg.test(a.name)) {
+                        attrsKV[a.name] = a.value;
+                    }
+                } else if (!tmplCommandAnchorReg.test(a.name)) {
+                    attrsKV[a.name] = true;
+                }
+            }
+            if (token.hasOwnProperty('attrsStart')) {
+                token.hasAttrs = true;
+            }
+            token.contentStart = end;
+            if (unary) {
+                ctrls.pop();
+                delete token.contentStart;
+                delete token.hasContent;
+            }
+        },
+        end(tag, inner, outer, attrs) {
+            let token = ctrls.pop();
+            if (!token || token.tag !== tag) {
+                let msg = '[MXC-Error(tmpl-parser)] ';
+                if (!token) {
+                    msg += `can not process unopened tag "</${tag}>"`;
+                } else {
+                    msg += `"</${tag}>" unmatched open tag "${token.tag}"`;
+                }
+                throw new Error(msg);
+            }
+            let lower = tag.toLowerCase();
+            if (lower == 'foreignobject') {
+                if (svgStack.length) {
+                    svgStack.pop();
+                }
+                if (svgStack.length) {
+                    inSVG = svgStack[svgStack.length - 1] == 'svg';
+                } else {
+                    inSVG = false;
+                }
+            } else if (lower == 'svg') {
+                inSVG = false;
+                svgStack.pop();
+            }
+            token.endAttrs = attrs;
+            token.contentEnd = inner;
+            token.end = outer;
+        },
+        chars(text, start, end) {
+            let token = {
+                id: 't' + id++,
+                isText: true,
+                start,
+                end
+            };
+            let parent = ctrls[ctrls.length - 1];
+            addChildren(token, parent);
+            tokens.push(token);
+            tokensMap[token.id] = token;
+        }
+    });
+    for (let i = tokens.length, token; i--;) {
+        token = tokens[i];
+        if (walk) {
+            walk(token);
+        }
+        if (token.isChild) {
+            tokens.splice(i, 1);
+        }
+        if (token.hasMxView) {
+            let pId = token.pId;
+            while (pId) {
+                let pToken = tokensMap[pId];
+                if (pToken) {
+                    pToken.hasSubView = true;
+                    pId = pToken.pId;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    for (let i = 0; i < tokens.length; i++) {
+        let token = tokens[i];
+        if (!i) {
+            token.first = true;
+        }
+        if (!token.isText) {
+            token.firstElement = true;
+            break;
+        }
+    }
+    for (let i = tokens.length; i--;) {
+        let token = tokens[i];
+        if (i == tokens.length - 1) {
+            token.last = true;
+        }
+        if (!token.isText) {
+            token.lastElement = true;
+            break;
+        }
+    }
+    return tokens;
+};
