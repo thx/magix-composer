@@ -6,7 +6,7 @@ let attrUri = require('./tmpl-attr-uri');
 //let tmplCmd = require('./tmpl-cmd');
 
 let mxViewAttrReg = /\bmx-view\s*=\s*(['"])([^'"]*?)\1/;
-let cmdReg = /\u0007\d+\u0007/g;
+let cmdReg = /\x07\d+\x07/g;
 module.exports = (e, match, refTmplCommands) => {
     if (mxViewAttrReg.test(match)) { //带有mx-view属性才处理
         match.replace(mxViewAttrReg, (m, q, content) => {

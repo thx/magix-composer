@@ -6,19 +6,28 @@
 let path = require('path');
 let sutil = require('util');
 let configs = require('./util-config');
+let fcache = require('./util-fcache');
 
 let sep = path.sep;
 let sepRegTmpl = sep.replace(/\\/g, '\\\\');
 let sepReg = new RegExp(sepRegTmpl, 'g');
-let cssTailReg = /\.(?:css|less|scss)/i;
 let startSlashReg = /^\//;
-let extractModuleId = file => {
+let moduleIdCache = Object.create(null);
+let extractModuleId = (file, ignoreVirtual) => {
+    let key = file + '\x00' + ignoreVirtual;
+    if (moduleIdCache[key]) {
+        return moduleIdCache[key];
+    }
     let id = file.replace(configs.moduleIdRemovedPath, '')
-        .replace(configs.jsFileExtNamesReg, '')
-        .replace(cssTailReg, '')
+        .replace(configs.jsOrCssFileExtNamesReg, '')
         .replace(sepReg, '/')
         .replace(startSlashReg, '');
+    if (!ignoreVirtual &&
+        configs.moduleAddVirtualRootToId) {
+        id = `~${configs.projectName}/${id}`;
+    }
     id = configs.resolveModuleId(id);
+    moduleIdCache[key] = id;
     return id;
 };
 
@@ -48,9 +57,30 @@ let uId = (fix, str, withoutSuffix) => {
     } while (~str.indexOf(id));
     return (fix || '') + id + (withoutSuffix ? '' : (fix || ''));
 };
+/**
+ * Camelize a hyphen-delimited string.
+ */
+let camelizeRE = /-(\w)/g;
+let camelize = fcache(str => {
+    return str.replace(camelizeRE, (_, c) => {
+        return c ? c.toUpperCase() : '';
+    });
+});
+
+/**
+ * Hyphenate a camelCase string.
+ */
+let hyphenateRE = /(?=[^-])([A-Z])/g;
+let hyphenate = fcache(str => {
+    return str
+        .replace(hyphenateRE, '-$1')
+        .toLowerCase();
+});
 module.exports = {
     clone,
     uId,
     cloneAssign,
-    extractModuleId
+    extractModuleId,
+    hyphenate,
+    camelize
 };

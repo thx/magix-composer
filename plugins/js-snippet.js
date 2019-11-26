@@ -4,7 +4,7 @@
 let deps = require('./util-deps');
 let configs = require('./util-config');
 let path = require('path');
-let checker = require('./checker');
+let cssChecker = require('./checker-css');
 let fs = require('fs');
 let sep = path.sep;
 let fileReg = /(['"`])\x12@([^'"`]+\.[jt]s)\1;?/g;
@@ -20,25 +20,28 @@ module.exports = e => {
                 resolve(e);
             }
         };
-        let readFile = (key, file) => {
+
+        let readFile = (key, file, ctrl) => {
             count++;
             let to = path.resolve(configs.compiledFolder + file.replace(configs.moduleIdRemovedPath, ''));
-            if (fs.existsSync(file)) {
-                e.processContent(file, to).then(info => {
-                    contentCache[key] = info.content;
+            fs.access(file, (fs.constants ? fs.constants.R_OK : fs.R_OK), err => {
+                if (err) {
+                    cssChecker.markUnexists(file, e.from);
+                    contentCache[key] = `(()=>{throw new Error(${JSON.stringify('unfound:' + file)})})()`;
                     count--;
                     if (!count) {
                         resume();
                     }
-                }).catch(reject);
-            } else {
-                checker.CSS.markUnexists(file, e.from);
-                contentCache[key] = `(()=>{throw new Error(${JSON.stringify('unfound:' + file)})})()`;
-                count--;
-                if (!count) {
-                    resume();
+                } else {
+                    e.processContent(file, to).then(info => {
+                        contentCache[key] = info.content;
+                        count--;
+                        if (!count) {
+                            resume();
+                        }
+                    }).catch(reject);
                 }
-            }
+            });
         };
         let tasks = [];
         e.content.replace(fileReg, (m, q, name) => {

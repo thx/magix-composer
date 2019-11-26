@@ -1,293 +1,388 @@
-/*
-    记录检测的结果，因为样式检测需要对整个项目做处理，因此只能在处理完成时才输出
- */
 let configs = require('./util-config');
 let slog = require('./util-log');
 let chalk = require('chalk');
-let filesToSelectors = Object.create(null); //记录样式文件中有哪些选择器
-let filesUndeclared = Object.create(null); //记录html文件未声明的样式
-let markUsedTemp = Object.create(null); //临时记录使用过哪些选择器，针对后期动态新增的全局选择器。目前已不推荐使用全局样式
-let existsSelectors = []; //记录同名的选择器
-let fileSelectorsUsed = Object.create(null); //记录文件中使用过的选择器
-let fileGlobals = Object.create(null); //全局使用的，目前已不推荐
-let filesToTags = Object.create(null); //文件中标签选择器
-let markUsedTempTags = Object.create(null); //
-let fileTagsUsed = Object.create(null); //文件中使用过的标签
-let unexists = Object.create(null); //不存在的选择器
+let consts = require('./util-const');
+
+let ItemUsed = 1;
+let ItemDeclared = 2;
+let ItemSecondhand = 4;
+//文件之间关系，主要通过js关联的html和css
+let FileRelationships = Object.create(null);
+//记录js文件中，如@scoped.style:--css-var使用的选择器，变量等
+let FileHostUsed = Object.create(null);
+//记录样式文件声明了哪些选择器，变量及@规则
+let FileStylesDeclared = Object.create(null);
+//记录模板文件中使用了哪些选择器，css变量
+let FileTemplatesUsed = Object.create(null);
+//追踪不存在的文件
+let FileUnexists = Object.create(null);
+//记录样式文件中[ref="@path.css:selector"]使用的选择器或变量
+let FileStylesUsed = Object.create(null);
+//记录复杂的样式
+let FileStylesComplex = Object.create(null);
+//记录使用过的全局变量
+let FileStylesGlobalVarUsed = Object.create(null);
+
 module.exports = {
-    reset(all) {
-        filesUndeclared = Object.create(null);
-        filesToSelectors = Object.create(null);
-        fileGlobals = Object.create(null);
-        filesToTags = Object.create(null);
-        unexists = Object.create(null);
-        if (all) {
-            existsSelectors = [];
-            fileSelectorsUsed = Object.create(null);
-            markUsedTemp = Object.create(null);
-        }
+    resetByHost(from) {
+        delete FileRelationships[from];
+        delete FileHostUsed[from];
+        delete FileUnexists[from];
     },
-    clearUsed(from) {
-        if (!configs.checker.css || !configs.debug) return;
-        for (let p in fileSelectorsUsed) {
-            let fInfo = fileSelectorsUsed[p];
-            if (fInfo) {
-                for (let z in fInfo) {
-                    let sInfo = fInfo[z];
-                    delete sInfo[from];
-                }
-            }
-        }
+    resetByTemplate(from) {
+        delete FileTemplatesUsed[from];
     },
-    clearUsedTags(from) {
-        if (!configs.checker.css || !configs.debug) return;
-        for (let p in fileTagsUsed) {
-            let fInfo = fileTagsUsed[p];
-            if (fInfo) {
-                for (let z in fInfo) {
-                    let sInfo = fInfo[z];
-                    delete sInfo[from];
-                }
-            }
-        }
+    resetByStyle(from) {
+        delete FileStylesDeclared[from];
+        delete FileStylesUsed[from];
+        delete FileStylesComplex[from];
+        delete FileStylesGlobalVarUsed[from];
     },
-    fileToTags(file, tags, processUsed) {
-        if (!configs.checker.css || !configs.debug) return;
-        if (!filesToTags[file]) {
-            filesToTags[file] = Object.assign(Object.create(null), tags);
-            let a = markUsedTempTags[file];
-            if (a && a.length) {
-                delete markUsedTempTags[file];
-                this.markUsedTags(file, a);
-            }
-            if (processUsed) {
-                let fInfo = fileTagsUsed[file];
-                if (fInfo) {
-                    for (let s in fInfo) {
-                        let sInfo = fInfo[s];
-                        let keys = Object.keys(sInfo);
-                        if (keys.length) {
-                            this.markUsedTags(file, s);
-                        }
-                    }
-                }
-            }
-        }
+    resetUnexist(host) {
+        delete FileUnexists[host];
     },
-    fileToSelectors(file, selectors, processUsed) {
-        if (!configs.checker.css || !configs.debug) return;
-        if (!filesToSelectors[file]) {
-            filesToSelectors[file] = Object.assign(Object.create(null), selectors);
-            let a = markUsedTemp[file];
-            if (a && a.length) {
-                delete markUsedTemp[file];
-                this.markUsed(file, a);
-            }
-            if (processUsed) {
-                let fInfo = fileSelectorsUsed[file];
-                if (fInfo) {
-                    for (let s in fInfo) {
-                        let sInfo = fInfo[s];
-                        let keys = Object.keys(sInfo);
-                        if (keys.length) {
-                            this.markUsed(file, s);
-                        }
-                    }
-                }
-            }
-        }
-    },
-    markExists(name, currentFile, prevFiles) {
-        if (!configs.checker.css || !configs.debug) return;
-        let key = [name, currentFile, prevFiles].join('\u0000');
-        if (!existsSelectors[key]) {
-            existsSelectors[key] = true;
-            existsSelectors.push({
-                name: name,
-                current: currentFile,
-                prev: prevFiles
-            });
-        }
-    },
-    markUnexists(name, currentFile) {
-        if (!configs.checker.css || !configs.debug) return;
-        if (!unexists[currentFile]) {
-            unexists[currentFile] = Object.create(null);
-        }
-        unexists[currentFile][name] = name;
-    },
-    markUsed(files, selectors, host) {
-        if (!configs.checker.css || !configs.debug) return;
-        if (!Array.isArray(files)) {
-            files = [files];
-        }
-        if (!Array.isArray(selectors)) {
-            selectors = [selectors];
-        }
-        files.forEach(file => {
-            let info = filesToSelectors[file];
-            if (info) {
-                selectors.forEach(selector => {
-                    if (host) {
-                        let fInfo = fileSelectorsUsed[file];
-                        if (!fInfo) {
-                            fInfo = fileSelectorsUsed[file] = Object.create(null);
-                        }
-                        let sInfo = fInfo[selector];
-                        if (!sInfo) {
-                            sInfo = fInfo[selector] = Object.create(null);
-                        }
-                        sInfo[host] = 1;
-                    }
-                    delete info[selector];
-                    if (configs.selectorDSEndReg.test(selector)) {
-                        for (let p in info) {
-                            if (p.indexOf(selector) === 0) {
-                                delete info[p];
-                            }
-                        }
-                    }
-                });
-            } else {
-                let a = markUsedTemp[file];
-                if (!a) a = markUsedTemp[file] = [];
-                a.push.apply(a, selectors);
-            }
-        });
-    },
-    markUsedTags(files, tags, host) {
-        if (!configs.checker.css || !configs.debug) return;
-        if (!Array.isArray(files)) {
-            files = [files];
-        }
-        if (!Array.isArray(tags)) {
-            tags = [tags];
-        }
-        //console.log(tags,filesToTags,files,'@@@@@@@@@@');
-        files.forEach(file => {
-            let info = filesToTags[file];
-            if (info) {
-                tags.forEach(tag => {
-                    if (host) {
-                        let fInfo = fileTagsUsed[file];
-                        if (!fInfo) {
-                            fInfo = fileTagsUsed[file] = Object.create(null);
-                        }
-                        let sInfo = fInfo[tag];
-                        if (!sInfo) {
-                            sInfo = fInfo[tag] = Object.create(null);
-                        }
-                        sInfo[host] = 1;
-                    }
-                    delete info[tag];
-                });
-            } else {
-                let a = markUsedTempTags[file];
-                if (!a) a = markUsedTempTags[file] = [];
-                a.push.apply(a, tags);
-            }
-        });
-    },
-    markLazyDeclared(selector) {
-        if (!configs.checker.css || !configs.debug) return;
-        for (let p in filesUndeclared) {
-            let info = filesUndeclared[p];
-            delete info[selector];
-        }
-    },
-    markUndeclared(file, selector) {
-        if (!configs.checker.css || !configs.debug) return;
-        let r = filesUndeclared[file];
-        if (!r) {
-            r = filesUndeclared[file] = Object.create(null);
-        }
-        r[selector] = 1;
-    },
-    markGlobal(file, name) {
-        if (!configs.checker.css || !configs.debug) return;
-        //name = name.replace(rnReg, '');
-        let info = fileGlobals[file];
+    storeStyleGlobalVars(host, vars) {
+        let info = FileStylesGlobalVarUsed[host];
         if (!info) {
-            info = fileGlobals[file] = Object.create(null);
+            info = FileStylesGlobalVarUsed[host] = Object.create(null);
         }
-        info[name] = 1;
+        info[vars] = ItemUsed;
+    },
+    storeUnexist(host, name) {
+        FileUnexists[host] = name;
+    },
+    storeStyleDeclared(file, declares) {
+        /*
+            declares:{
+                vars:{},
+                selectors:{},
+                tagsOrAttrs:{}
+            }
+        */
+        let info = FileStylesDeclared[file];
+        if (!info) {
+            info = FileStylesDeclared[file] = {
+                vars: Object.create(null),
+                selectors: Object.create(null),
+                tagsOrAttrs: Object.create(null),
+                atRules: Object.create(null)
+            };
+        }
+        if (declares.selectors) {
+            Object.assign(info.selectors, declares.selectors);
+        }
+        if (declares.vars) {
+            Object.assign(info.vars, declares.vars);
+        }
+        if (declares.tagsOrAttrs) {
+            Object.assign(info.tagsOrAttrs, declares.tagsOrAttrs);
+        }
+        if (declares.atRules) {
+            Object.assign(info.atRules, declares.atRules);
+        }
+    },
+    storeTemplateUsed(file, used) {
+        /*
+            used:{
+                vars:{},
+                selectors:{}
+            }
+        */
+        let info = FileTemplatesUsed[file];
+        if (!info) {
+            info = FileTemplatesUsed[file] = {
+                vars: Object.create(null),
+                selectors: Object.create(null),
+                tagsOrAttrs: Object.create(null)
+            };
+        }
+        if (used.selectors) {
+            Object.assign(info.selectors, used.selectors);
+        }
+        if (used.vars) {
+            Object.assign(info.vars, used.vars);
+        }
+        if (used.tagsOrAttrs) {
+            Object.assign(info.tagsOrAttrs, used.tagsOrAttrs);
+        }
+    },
+    storeStyleUsed(host, file, used) {
+        let info = FileStylesUsed[host];
+        if (!info) {
+            info = FileStylesUsed[host] = Object.create(null);
+        }
+        info = info[file];
+        if (!info) {
+            info = FileStylesUsed[host][file] = {
+                selectors: Object.create(null),
+                vars: Object.create(null),
+                atRules: Object.create(null)
+            };
+        }
+        if (used.selectors) {
+            Object.assign(info.selectors, used.selectors);
+        }
+        if (used.vars) {
+            Object.assign(info.vars, used.vars);
+        }
+        if (used.atRules) {
+            Object.assign(info.atRules, used.atRules);
+        }
+    },
+    storeStyleComplex(file, rules) {
+        FileStylesComplex[file] = rules;
+    },
+    storeHostUsed(host, file, used) {
+        /*
+            used:{
+                vars:{},
+                selectors:{}
+            }
+        */
+        let info = FileHostUsed[host];
+        if (!info) {
+            info = FileHostUsed[host] = Object.create(null);
+        }
+        info = info[file];
+        if (!info) {
+            info = FileHostUsed[host][file] = {
+                vars: Object.create(null),
+                selectors: Object.create(null)
+            };
+        }
+        if (used.selectors) {
+            Object.assign(info.selectors, used.selectors);
+        }
+        if (used.vars) {
+            Object.assign(info.vars, used.vars);
+        }
+    },
+    hostAddTemplate(host, template) {
+        if (!FileRelationships[host]) {
+            FileRelationships[host] = {
+                templates: Object.create(null),
+                styles: Object.create(null)
+            };
+        }
+        FileRelationships[host].templates[template] = 1;
+    },
+    hostAddStyle(host, style) {
+        if (!FileRelationships[host]) {
+            FileRelationships[host] = {
+                templates: Object.create(null),
+                styles: Object.create(null)
+            };
+        }
+        let dest = FileRelationships[host].styles;
+        let keys = Object.keys(dest);
+        dest[style] = keys.length;
     },
     output() {
-        let p, keys, outCss = false;
-        if (configs.checker.css) {
-            for (let p in fileGlobals) {
-                outCss = true;
-                let info = fileGlobals[p];
-                let keys = Object.keys(info);
-                let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
-                slog.ever(chalk.grey(short) + ' avoid use ' + chalk.red(keys + ''));
-            }
-            if (outCss) {
-                slog.ever(chalk.grey('──────────────────────────────'));
-            }
-            outCss = false;
-            if (existsSelectors.length) {
-                outCss = true;
-                existsSelectors.forEach(item => {
-                    let cShort = item.current.replace(configs.moduleIdRemovedPath, '').substring(1);
-                    let pShort = item.prev.replace(configs.moduleIdRemovedPath, '').substring(1);
-                    slog.ever('css:already exists', chalk.red(item.name), 'file', chalk.grey(cShort), 'prev files', chalk.blue(pShort));
-                });
-                existsSelectors = [];
-            }
-            if (outCss) {
-                slog.ever(chalk.grey('──────────────────────────────'));
-            }
-            outCss = false;
-            for (p in unexists) {
-                keys = Object.keys(unexists[p]);
-                if (keys.length) {
-                    outCss = true;
-                    let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
-                    keys = keys.map(key => {
-                        return key.replace(configs.moduleIdRemovedPath, '').substring(1);
-                    });
-                    slog.ever(chalk.grey(short) + ' can not find', chalk.red(keys.reverse().join(',')));
+        if (!configs.checker.css || !configs.debug) return;
+        let declared = Object.create(null);
+        for (let p in FileStylesDeclared) {
+            let init = {};
+            let t = FileStylesDeclared[p];
+            for (let i in t) {
+                init[i] = Object.create(null);
+                for (let z in t[i]) {
+                    init[i][z] = ItemDeclared;
                 }
             }
-            outCss = false;
-            let composeTagsAndSelectors = Object.create(null);
-            for (p in filesToTags) {
-                keys = Object.keys(filesToTags[p]);
-                if (keys.length) {
-                    outCss = true;
-                    let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
-                    composeTagsAndSelectors[short] = '"' + keys.reverse().join('","') + '"';
-                }
-            }
-            //console.log(filesToSelectors);
-            for (p in filesToSelectors) {
-                keys = Object.keys(filesToSelectors[p]);
-                if (keys.length) {
-                    outCss = true;
-                    let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
-                    if (composeTagsAndSelectors[short]) {
-                        composeTagsAndSelectors[short] += ',".' + keys.reverse().join('",".') + '"';
-                    } else {
-                        composeTagsAndSelectors[short] = '".' + keys.reverse().join('",".') + '"';
+            declared[p] = init;
+        }
+        let updateStyleUsed = (style, used, un, locker) => {
+            let dest = declared[style];
+            for (let p in used) {
+                if (locker && !locker[p]) locker[p] = Object.create(null);
+                for (let z in used[p]) {
+                    if (dest &&
+                        dest[p][z]) {
+                        if (!locker || locker[p][z] != ItemSecondhand) {
+                            if (configs.selectorDSEndReg.test(z)) {
+                                for (let f in dest[p]) {
+                                    if (f.startsWith(z)) {
+                                        dest[p][f] |= ItemUsed;
+                                    }
+                                }
+                            } else {
+                                dest[p][z] |= ItemUsed;
+                            }
+                            if (locker) {
+                                locker[p][z] = ItemSecondhand;
+                            }
+                        }
+                    } else if (un) {
+                        if (!un[p]) {
+                            un[p] = Object.create(null);
+                        }
+                        un[p][z] = ItemUsed;
                     }
                 }
             }
-
-            if (outCss) {
-                for (p in composeTagsAndSelectors) {
-                    keys = composeTagsAndSelectors[p];
-                    slog.ever(chalk.grey(p) + ' never used', chalk.red(keys));
-                }
-                slog.ever(chalk.grey('──────────────────────────────'));
+        };
+        let sortStyles = styles => {
+            let result = [];
+            for (let p in styles) {
+                result.push({
+                    num: styles[p],
+                    file: p
+                });
             }
-            for (p in filesUndeclared) {
-                keys = Object.keys(filesUndeclared[p]);
-                if (keys.length) {
-                    let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
-                    slog.ever(chalk.grey(short) + ' never declared', chalk.red('.' + keys.join(' .')));
+            result = result.sort((a, b) => b.num - a.num);
+            return result;
+        };
+        let usedGlobalVars = Object.create(null);
+        let updateGlobalVars = vars => {
+            let result = false;
+            if (vars.startsWith(`--${consts.cssIdGlobalPrefix}`)) {
+                for (let host in FileStylesGlobalVarUsed) {
+                    let dest = FileStylesGlobalVarUsed[host];
+                    if (!usedGlobalVars[host]) {
+                        usedGlobalVars[host] = Object.create(null);
+                    }
+                    if (dest[vars]) {
+                        usedGlobalVars[host][vars] = ItemDeclared;
+                        result = true;
+                    }
+                }
+            }
+            return result;
+        };
+        let templateUsed = Object.create(null);
+        for (let fr in FileRelationships) {
+            let { styles, templates } = FileRelationships[fr];
+            styles = sortStyles(styles);
+            for (let template in templates) {
+                let used = FileTemplatesUsed[template];
+                templateUsed[template] = Object.create(null);
+                if (used) {
+                    for (let style of styles) {
+                        updateStyleUsed(style.file, used, null, templateUsed[template]);
+                    }
+                }
+            }
+        }
+        let unexist = Object.create(null);
+        for (let fhu in FileHostUsed) {
+            unexist[fhu] = Object.create(null);
+            let s = FileHostUsed[fhu];
+            for (let style in s) {
+                unexist[fhu][style] = Object.create(null);
+                updateStyleUsed(style, s[style], unexist[fhu][style]);
+            }
+        }
+        for (let fsu in FileStylesUsed) {
+            unexist[fsu] = Object.create(null);
+            let fileWrap = FileStylesUsed[fsu];
+            for (let style in fileWrap) {
+                let styleWrap = fileWrap[style];
+                unexist[fsu][style] = Object.create(null);
+                updateStyleUsed(style, styleWrap, unexist[fsu][style]);
+            }
+        }
+
+        for (let host in unexist) {
+            let dest = unexist[host];
+            let hostShort = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            for (let aim in dest) {
+                let selectors = dest[aim];
+                let aimShort = aim.replace(configs.moduleIdRemovedPath, '').substring(1);
+                for (let selector in selectors) {
+                    for (let key in selectors[selector]) {
+                        slog.ever('[MXC(checker)]', chalk.grey(hostShort), 'use unexist', chalk.red(key), 'from', chalk.grey(aimShort));
+                    }
+                }
+            }
+        }
+        for (let p in FileStylesComplex) {
+            let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let rules = FileStylesComplex[p];
+            slog.ever('[MXC(checker)]', chalk.grey(short) + ' avoid use ' + chalk.red(`"${rules.join('","')}"`));
+        }
+
+        for (let fn in declared) {
+            let selectors = declared[fn];
+            let short = fn.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let neverUsedSelectors = [],
+                neverUsedTagsOrAttrs = [],
+                neverUsedVars = [],
+                neverUsedAtRules = [];
+            for (let selector in selectors) {
+                let dest = selectors[selector];
+                for (let key in dest) {
+                    if ((dest[key] & ItemUsed) != ItemUsed) {
+                        if (selector == 'selectors') {
+                            if (!configs.selectorDSEndReg.test(key)) {
+                                neverUsedSelectors.push('.' + key);
+                            }
+                        } else if (selector == 'vars') {
+                            if (!updateGlobalVars(key)) {
+                                neverUsedVars.push(key);
+                            }
+                        } else if (selector == 'tagsOrAttrs') {
+                            neverUsedTagsOrAttrs.push(key);
+                        } else if (selector == 'atRules') {
+                            neverUsedAtRules.push(key);
+                        }
+                    }
+                }
+            }
+            if (neverUsedSelectors.length) {
+                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used selectors ' + chalk.red(`"${neverUsedSelectors.join('","')}"`));
+            }
+            if (neverUsedTagsOrAttrs.length) {
+                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used tags or attrs ' + chalk.red(`"${neverUsedTagsOrAttrs.join('","')}"`));
+            }
+            if (neverUsedVars.length) {
+                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used vars ' + chalk.red(`"${neverUsedVars.join('","')}"`));
+            }
+            if (neverUsedAtRules.length) {
+                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used at rules ' + chalk.red(`"${neverUsedAtRules.join('","')}"`));
+            }
+        }
+
+        for (let host in FileTemplatesUsed) {
+            let short = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let dest = FileTemplatesUsed[host];
+            let undeclared = [];
+            let tUsed = templateUsed[host];
+            if (dest.selectors) {
+                for (let p in dest.selectors) {
+                    if (!tUsed ||
+                        !tUsed.selectors ||
+                        tUsed.selectors[p] !== ItemSecondhand) {
+                        undeclared.push('.' + p);
+                    }
+                }
+            }
+            if (dest.vars) {
+                for (let p in dest.vars) {
+                    if (!tUsed ||
+                        !tUsed.vars ||
+                        tUsed.vars[p] !== ItemSecondhand) {
+                        undeclared.push('var(' + p + ')');
+                    }
+                }
+            }
+            if (undeclared.length) {
+                slog.ever('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(`"${undeclared.join('","')}"`));
+            }
+        }
+        for (let fu in FileUnexists) {
+            let short = fu.replace(configs.moduleIdRemovedPath, '').substring(1);
+            slog.ever('[MXC(checker)]', chalk.grey(short), 'can not find', chalk.red(FileUnexists[fu]));
+        }
+        for (let host in FileStylesGlobalVarUsed) {
+            let short = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let dest = FileStylesGlobalVarUsed[host];
+            let used = usedGlobalVars[host];
+            for (let key in dest) {
+                if (!used ||
+                    used[key] != ItemDeclared) {
+                    slog.ever('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(key));
                 }
             }
         }
     }
-};
+}

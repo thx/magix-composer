@@ -5,22 +5,21 @@
     3.　检测不支持的写法
  */
 let chalk = require('chalk');
-let configs = require('./util-config');
-let checker = require('./checker');
 let slog = require('./util-log');
 let utils = require('./util');
 let jsGeneric = require('./js-generic');
 let tmplCmd = require('./tmpl-cmd');
 let acorn = require('./js-acorn');
-let tmplChecker = checker.Tmpl;
-let removeTempReg = /[\u0002\u0001\u0003\u0006]\.?/g;
-let cmdReg = /\u0007\d+\u0007/g;
-let onlyCmdReg = /^(?:\u0007\d+\u0007)+$/;
+let consts = require('./util-const');
+let tmplChecker = require('./checker-tmpl');
+let removeTempReg = /[\x02\x01\x03\x06]\.?/g;
+let cmdReg = /\x07\d+\x07/g;
+let onlyCmdReg = /^(?:\x07\d+\x07)+$/;
 let dOutCmdReg = /<%([=@])([\s\S]+?)%>/g;
 let unsupportOutCmdReg = /<%@[\s\S]+?%>/g;
 let stringReg = /^['"]/;
-let magixHolder = '\u001e';
-let holder = '\u001f';
+let magixHolder = '\x1e';
+let holder = '\x1f';
 let processQuot = (str, refTmplCommands, mxEvent, e, toSrc) => {
     str.replace(cmdReg, cm => {
         let cmd = refTmplCommands[cm];
@@ -43,7 +42,7 @@ let htmlQEntityReg = /(\\*)(&quot;?|&#x22;?|&#x27;?|&#34;?|&#39;?)/g;
 let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
     let index = 0;
     let store = Object.create(null);
-    let cmdKey = utils.uId('\u00aa', params);
+    let cmdKey = utils.uId('\xaa', params);
     let cmdPHReg = new RegExp(cmdKey + '\\d+' + cmdKey, 'g');
     //console.log(JSON.stringify(params));
     params = '(' + params.replace(cmdReg, m => {
@@ -140,7 +139,7 @@ let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
     return params.slice(1, -1);
 };
 module.exports = (e, match, refTmplCommands, toSrc) => {
-    match = match.replace(configs.tmplMxEventReg, (m, name, double, single) => { //查找事件
+    match = match.replace(consts.tmplMxEventReg, (m, name, double, single) => { //查找事件
         tmplChecker.checkMxEventName(name, e);
         if (double || single) {
             let originalMatch = toSrc(m);

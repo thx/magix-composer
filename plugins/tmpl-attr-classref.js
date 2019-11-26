@@ -1,19 +1,24 @@
-let checker = require('./checker');
-let configs = require('./util-config');
-let numReg = /^\d+$/;
-let selfCssReg = /@[\$:]\(([\w\-]+)\)/g;
-module.exports = (tmpl, e, locker = Object.create(null)) => {
+let cssChecker = require('./checker-css');
+let pureNumReg = /^\d+$/;
+let selfCssReg = /@\$\(\.([\w\-]+)\)/g;
+module.exports = (tmpl, e) => {
     let selfCssClass = (m, key) => {
-        if (numReg.test(key)) return m;
-        let r = e.cssNamesMap[key];
-        if (!locker[key]) {
-            locker[key] = 1;
-            if (r) {
-                let files = e.cssNamesInFiles[key + '!r'];
-                checker.CSS.markUsed(files, key, e.from);
-            } else {
-                checker.CSS.markUndeclared(e.srcHTMLFile, key);
-            }
+        if (pureNumReg.test(key)) return m;
+        let r;
+        if (key.startsWith('--')) {
+            r = e.cssVarsMap[key];
+            cssChecker.storeTemplateUsed(e.srcHTMLFile, {
+                vars: {
+                    [key]: 1
+                }
+            });
+        } else {
+            r = e.cssNamesMap[key];
+            cssChecker.storeTemplateUsed(e.srcHTMLFile, {
+                selectors: {
+                    [key]: 1
+                }
+            });
         }
         return r || key;
     };

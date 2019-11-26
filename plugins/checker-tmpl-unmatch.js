@@ -9,7 +9,7 @@ let commentReg = /<!--[\s\S]*?-->/g;
 let tagRemovedReg = /<(style|script)[^>]*>[\s\S]*?<\/\1>/g;
 let tagReg = /<(\/)?([a-z0-9\-.:_\x11]+)/ig;
 let brReg = /(?:\r\n|\r|\n)/;
-let consts = require('./util-const');
+let { microTmplCommand } = require('./util-const');
 let hdreg = /\x1f\d+\s*\x1f/g;
 let brPlaceholder = (m, store) => {
     let count = m.split(brReg).length;
@@ -23,7 +23,7 @@ let cleanHTML = (tmpl, store) => {
     }).replace(tagRemovedReg, m => {
         return brPlaceholder(m, store);
     });
-    tmpl = tmpl.replace(consts.microTmplCommand, m => {
+    tmpl = tmpl.replace(microTmplCommand, m => {
         return brPlaceholder(m, store);
     });
     if (configs.tmplCommand) {
@@ -68,7 +68,7 @@ module.exports = (tmpl, e) => {
     }
     tmpl = newLines.join('');
     htmlParser(tmpl, {
-        start(tag, attrs, unary, { attrsMap, start, end }) {
+        start(tag, { unary, attrsMap, start, end }) {
             let a = tmpl.slice(start, end);
             if (!unary) {
                 tags.push({
@@ -78,7 +78,7 @@ module.exports = (tmpl, e) => {
                 });
             }
         },
-        end(tag, start, end) {
+        end(tag, { start, end }) {
             let m = tmpl.slice(start, end);
             let no = readLineNo(m);
             tags.push({
@@ -99,13 +99,13 @@ module.exports = (tmpl, e) => {
             let last = tagsStack.pop();
             if (tag.name != last.name) {
                 let before = `open tag "${recover(last.match)}"`;
-                if (last.name.startsWith('art\x11')) {
-                    before = `art "${last.close ? '/' : ''}${last.name.substring(4)}"`;
-                }
+                // if (last.name.startsWith('art\x11')) {
+                //     before = `art "${last.close ? '/' : ''}${last.name.substring(4)}"`;
+                // }
                 let current = recover(tag.match);
-                if (tag.name.startsWith('art\x11')) {
-                    current = `art "${tag.close ? '/' : ''}${tag.name.substring(4)}"`;
-                }
+                // if (tag.name.startsWith('art\x11')) {
+                //     current = `art "${tag.close ? '/' : ''}${tag.name.substring(4)}"`;
+                // }
                 throw new Error(`[MXC Error(checker-tmpl-unmatch)] "${current}" at line ${tag.line} doesn't match ${before} at line ${last.line}`);
             }
         } else {

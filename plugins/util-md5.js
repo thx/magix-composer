@@ -1,6 +1,7 @@
 /*
     md5转换，最初使用的md5，后期修改成sha512，但md5这个名称未换
  */
+let configs = require('./util-config');
 let vkeys = '_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 let vkeysWithNumber = vkeys + '0123456789#!@$%^&*(){}[]|\\,.?`~/;:-+';
 let variable = (count, withNumber) => { //压缩变量
@@ -20,9 +21,16 @@ let cache = Object.create(null);
 let md5 = (text, configKey, prefix, withNumber, reserved) => {
     text += '';
     if (configKey == 'revisableString') {
-        let temp = text.split('#');
+        if (configs.revisableStringMap.hasOwnProperty(text)) {
+            return configs.revisableStringMap[text];
+        }
+        let spliter = text.includes(':') ? ':' : '#';
+        let temp = text.split(spliter);
         if (temp.length > 1) {
             configKey = temp[0];
+            prefix = '';
+        } else {
+            reserved = configs.revisableStringMapReserved;
         }
     }
     if (!counter[configKey]) {
@@ -42,8 +50,8 @@ let md5 = (text, configKey, prefix, withNumber, reserved) => {
         if (prefix) {
             rstr = prefix + rstr;
         }
-        cache[configKey][text] = rstr;
     } while (reserved && reserved[rstr]);
+    cache[configKey][text] = rstr;
     return rstr;
 };
 md5.byNum = variable;

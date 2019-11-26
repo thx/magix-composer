@@ -11,7 +11,7 @@ let readFile = (file, original) => { //读取文件
     return c;
 };
 
-let writeFile = (to, content) => { //文件写入
+let writeFile = (to, content, async) => { //文件写入
     let folders = path.dirname(to).split(sep);
     let p = '';
     while (folders.length) {
@@ -20,7 +20,11 @@ let writeFile = (to, content) => { //文件写入
             fs.mkdirSync(p);
         }
     }
-    fs.writeFileSync(to, content);
+    if (async) {
+        fs.writeFile(to, content, async);
+    } else {
+        fs.writeFileSync(to, content);
+    }
 };
 let copyFile = (from, to) => { //复制文件
     if (fs.existsSync(from)) {

@@ -1,5 +1,5 @@
 let cssParser = require('../plugins/css-parser');
-require('colors');
+require('chalk');
 let expect = (source, result) => {
     if (source != result) {
         console.log('expect:', result.red, 'source:', source.red);
@@ -10,7 +10,8 @@ let expect = (source, result) => {
 
 let t1 = `
 #app{//tip
-
+  --color:red;
+  --good--name:green;
 }
 ul li{ //ok
 

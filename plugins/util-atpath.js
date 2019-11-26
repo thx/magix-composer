@@ -8,13 +8,20 @@ let sepReg = new RegExp(sepRegTmpl, 'g');
 let atReg = /(@{1,})(\.[^\x07@]+)/g;
 let escapeAtReg = /@{2}/g;
 //以@开头的路径转换
-let relativePathReg = /(['"])@([^\/\\]+)([^\s;\(\)\{\}]+?)(?=\\?\1)/g;
+let relativePathReg = /(['"])?@([^\/\\]+)([^\s;\(\)\{\}]+?)(?=\\?\1)/g;
 //处理@开头的路径，如果是如'@coms/dragdrop/index'则转换成相对当前模块的相对路径，如果是如 mx-view="@./list" 则转换成 mx-view="app/views/reports/list"完整的模块路径
+let atPathCache = Object.create(null);
+let atNameCache = Object.create(null);
 let resolveAtPath = (content, from) => {
+    let key = content + '\x00' + from;
+    if (atPathCache[key]) {
+        return atPathCache[key];
+    }
     //console.log('resolveAtPath',content);
     let folder = from.substring(0, from.lastIndexOf('/') + 1);
     let tp;
-    return content.replace(relativePathReg, (m, q, l, p) => {
+    return atPathCache[key] = content.replace(relativePathReg, (m, q, l, p) => {
+        q = q || '';
         if (l.charAt(0) == '.') { //以.开头我们认为是相对路径，则转完整模块路径
             tp = q + path.normalize(folder + l + p);
         } else {
@@ -30,10 +37,14 @@ let resolveAtPath = (content, from) => {
 };
 //处理@名称，如'@../default.css'
 let resolveAtName = (name, moduleId) => {
+    let key = name + '\x00' + moduleId;
+    if (atNameCache[key]) {
+        return atNameCache[key];
+    }
     if (name.indexOf('/') >= 0 && name.charAt(0) != '.') {
         name = resolveAtPath('"@' + name + '"', moduleId).slice(1, -1);
     }
-    return name;
+    return (atNameCache[key] = name);
 };
 
 module.exports = {

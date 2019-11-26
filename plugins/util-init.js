@@ -13,14 +13,18 @@ let reservedReplacer = {
     ref: 1,
     names: 1,
     str: 1,
-    base64: 1
+    base64: 1,
+    html: 1,
+    style: 1
 };
 module.exports = () => {
     if (!configs.$inited) {
         configs.$inited = 1;
         configs.commonFolder = path.resolve(configs.commonFolder);
         configs.compiledFolder = path.resolve(configs.compiledFolder);
+        configs.rootFolder = configs.rootFolder ? path.resolve(configs.rootFolder) : configs.commonFolder;
         configs.jsFileExtNamesReg = new RegExp('\\.(?:' + configs.jsFileExtNames.join('|') + ')$');
+        configs.jsOrCssFileExtNamesReg = new RegExp('\\.(?:' + configs.jsFileExtNames.join('|') + '|css|less|scss)$');
         configs.moduleIdRemovedPath = configs.commonFolder; //把路径中开始到模板目录移除就基本上是模块路径了
         if (configs.projectName === null) {
             let str = crypto.createHash('sha512')
@@ -37,21 +41,24 @@ module.exports = () => {
         }
         configs.tmplFileExtNamesReg = new RegExp('\\.(?:' + names.join('|') + ')$');
 
-        configs.htmlFileReg = new RegExp('(?:src)?@[^\'"\\s@]+\\.(?:' + tmplExtNames.join('|') + ')');
+        configs.htmlFileReg = new RegExp('(?:compiled)?@[^\'"\\s@]+\\.(?:' + tmplExtNames.join('|') + ')');
         configs.htmlFileGlobalReg = new RegExp(configs.htmlFileReg, 'g');
 
         //模板处理，即处理view.html文件
-        configs.fileTmplReg = new RegExp('([\'"`])(src)?\\u0012@([^\'"\\s@]+)\\.(' + tmplExtNames.join('|') + ')\\1', 'g');
-
-        configs.tmplMxEventReg = /\b(?:\x1c\d+\x1c)?mx-(?!view|vframe|owner|autonomy|datafrom|guid|ssid|dep|html|static|is|as|type|name|from|to|slot-view|static-attr)([a-zA-Z]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+        configs.fileTmplReg = new RegExp('([\'"`])(compiled)?\\x12@([^\'"\\s@]+)\\.(' + tmplExtNames.join('|') + ')\\1', 'g');
 
         let rsPrefix = configs.revisableStringPrefix;
         if (!rsPrefix) {
-            rsPrefix = '__';
-        } else if (rsPrefix.charAt(0) === '$') {//以$开头是开发者手动处理的
-            rsPrefix = '_' + rsPrefix;
+            rsPrefix = '_';
         }
         configs.revisableStringPrefix = rsPrefix;
+
+        let revisableStringMapReserved = {},
+            revisableStringMap = configs.revisableStringMap;
+        for (let p in revisableStringMap) {
+            revisableStringMapReserved[revisableStringMap[p]] = 1;
+        }
+        configs.revisableStringMapReserved = revisableStringMapReserved;
 
         let galleryPrefixes = Object.create(null);
         for (let p in configs.galleries) {
@@ -62,6 +69,15 @@ module.exports = () => {
             }
         }
         configs.galleryPrefixes = galleryPrefixes;
+
+        // let componentPrefixes = Object.create(null);
+        // for (let p in configs.components) {
+        //     if (p.endsWith('Root')) {
+        //         componentPrefixes[p.slice(0, -4)] = 1;
+        //     }
+        // }
+
+        // configs.componentPrefixes = componentPrefixes;
 
         configs.selectorKeepNameReg = /(--)[\w-]+$/;
         configs.selectorDSEndReg = /--$/;
@@ -77,8 +93,13 @@ module.exports = () => {
                 throw new Error('MXC-Error(util-init) reserved:' + r);
             }
         }
-        replacer.push('str', 'base64');
+        replacer.push('str', 'base64', 'style', 'html');
         configs.fileReplacerPrefixesReg = new RegExp(`(?:${replacer.join('|')})@[\\w\\.\\-\\/\\\\]+`);
-        configs.fileReplacerPrefixesHolderReg = new RegExp(`([\`"'])(${replacer.join('|')})\\x12@([\\w\\.\\-\\/\\\\]+)\\1`);
+        configs.fileReplacerPrefixesHolderReg = new RegExp(`([\`"'])(${replacer.join('|')})\\x12@([\\w\\.\\-\\/\\\\]+)\\1`, 'g');
+
+        if (configs.loaderType == 'module' &&
+            configs.moduleAddVirtualRootToId === null) {
+            configs.moduleAddVirtualRootToId = true;
+        }
     }
 };

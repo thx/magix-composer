@@ -1,5 +1,6 @@
 let utils = require('./util');
 let regexp = require('./util-rcache');
+let { cssRegexpKey } = require('./util-const');
 let cssCommentReg = /\/\*[\s\S]+?\*\//g;
 module.exports = {
     store(css, refStore) {
@@ -10,12 +11,16 @@ module.exports = {
             refStore[k] = m;
             return k;
         });
-        refStore.__reg = regexp.get(regexp.escape('/*' + key) + '\\$\\d+\\*\\/', 'g');
+        refStore[cssRegexpKey] = regexp.get(regexp.escape('/*' + key) + '\\$\\d+\\*\\/', 'g');
         return css;
     },
     recover(css, refStore) {
-        return css.replace(refStore.__reg, m => {
+        css = css.replace(refStore[cssRegexpKey], m => {
             return refStore[m] || '';
         });
+        return css;
+    },
+    clean(css) {
+        return css.replace(cssCommentReg, '');
     }
 };

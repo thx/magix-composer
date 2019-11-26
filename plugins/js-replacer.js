@@ -1,7 +1,9 @@
 let path = require('path');
 let fs = require('fs');
+let cssnano = require('cssnano');
 let fd = require('./util-fd');
 let configs = require('./util-config');
+let tmplCmd = require('./tmpl-cmd');
 let actions = {
     str(file) {
         return Promise.resolve(fd.read(file));
@@ -9,6 +11,18 @@ let actions = {
     base64(file) {
         let r = Buffer.from(fd.read(file, true));
         return Promise.resolve(r.toString('base64'));
+    },
+    style(file) {
+        let content = fd.read(file);
+        return cssnano.process(content,
+            Object.assign({}, configs.cssnano)
+        ).then(r => {
+            return r.css;
+        });
+    },
+    html(file) {
+        let content = fd.read(file);
+        return tmplCmd.tidy(content);
     }
 };
 module.exports = e => {

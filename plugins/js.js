@@ -9,12 +9,23 @@ let jsContent = require('./js-content');
 let deps = require('./util-deps');
 let configs = require('./util-config');
 let slog = require('./util-log');
+//let cssChecker = require('./checker-css');
+//let { styleDependReg } = require('./util-const');
 //文件处理
 let processFile = (from, to, inwatch) => { // d:\a\b.js  d:\c\d.js
     return new Promise((resolve, reject) => {
         from = path.resolve(from);
         to = path.resolve(to);
         let promise = Promise.resolve();
+        // if (inwatch) {
+        //     if (styleDependReg.test(from)) {
+        //         cssChecker.resetByStyle(from);
+        //     } else if (configs.jsFileExtNamesReg.test(from)) {
+        //         cssChecker.resetByHost(from);
+        //     } else if (configs.tmplFileExtNamesReg.test(from)) {
+        //         cssChecker.resetByTemplate(from);
+        //     }
+        // }
         if (inwatch && deps.inDependents(from)) {
             promise = deps.runFileDepend(from);
         }

@@ -63,6 +63,7 @@ let selectorPower = {
 };
 let parse = (css, file, refAtRules) => {
     let tokens = [];
+    let vars = [];
     let nests = [];
     let nestsLocker = Object.create(null);
     let current = 0;
@@ -144,7 +145,6 @@ let parse = (css, file, refAtRules) => {
     let takeSelector = (offset) => {
         if (!configs.checker.css || !configs.debug) return;
         if (overSelectors > 0) { //1 标签　　100属性　10000类　1000000　id
-            //debugger;
             if (!offset) offset = 0;
             let s = css.substring(selectorStart, current + offset).trim();
             s = s.replace(atNameReg, (match, selector) => {
@@ -178,6 +178,46 @@ let parse = (css, file, refAtRules) => {
             }
         }
     };
+    let takeVars = (start, end) => {
+        //console.log(tokens);
+        let rules = css.substring(start, end);
+        let inName = true;
+        let idx = 0;
+        while (idx < rules.length) {
+            let c = rules[idx];
+            if (c == ';' ||
+                c == '\r' ||
+                c == '\n') {
+                inName = true;
+            } else if (c == ':') {
+                inName = false;
+            } else {
+                if (inName &&
+                    c == '-' &&
+                    rules[idx + 1] == '-') {
+                    let sub = rules.substr(idx);
+                    let matches = sub.match(nameReg);
+                    let name;
+                    if (matches) {
+                        name = matches[0];
+                        vars.push({
+                            name,
+                            start: current + idx,
+                            end: current + idx + name.length
+                        });
+                        idx += name.length - 1;
+                    } else {
+                        throw {
+                            message: '[MXC Error(css-parser)] get name error',
+                            file: file,
+                            extract: getArround()
+                        };
+                    }
+                }
+            }
+            idx++;
+        }
+    };
     let processRules = () => {
         let prev = '',
             pseudos = [];
@@ -202,6 +242,7 @@ let parse = (css, file, refAtRules) => {
                 current++;
                 let ti = css.indexOf('}', current);
                 if (ti != -1) {
+                    takeVars(current, ti);
                     current = ti;
                 } else {
                     throw {
@@ -216,13 +257,6 @@ let parse = (css, file, refAtRules) => {
             } else if (tc === '.' || tc === '#') {
                 current++;
                 let sc = current;
-                let isGlobal = false;
-                if (tc == '.') {
-                    isGlobal = css.charAt(current) == '@';
-                    if (isGlobal) {
-                        current++;
-                    }
-                }
                 let id = getNameAndGo();
                 overSelectors += tc === '.' ? selectorPower.CLASS : selectorPower.ID;
                 if (tc == '.') {
@@ -230,8 +264,7 @@ let parse = (css, file, refAtRules) => {
                         type: prev = 'class',
                         name: id,
                         start: sc,
-                        end: current,
-                        isGlobal
+                        end: current
                     });
                 } else if (tc == '#') {
                     tokens.push({
@@ -252,14 +285,17 @@ let parse = (css, file, refAtRules) => {
                         extract: getArround()
                     };
                 }
-                if (!prev) {
-                    tokens.push({
-                        type: 'sattr',
-                        name: matches[1],
-                        start: current,
-                        end: current + matches[0].length
-                    });
-                }
+                tokens.push({
+                    type: 'attr',
+                    name: matches[1],
+                    start: current - 1,
+                    first: !prev,
+                    ctrl: matches[2],
+                    quote: matches[3] || '',
+                    end: current + matches[0].length,
+                    value: matches[4] || matches[5],
+                    ignoreCase: !!matches[6]
+                });
                 overSelectors += selectorPower.ATTR;
                 prev = 'attr';
                 current += matches[0].length;
@@ -273,7 +309,6 @@ let parse = (css, file, refAtRules) => {
                 let begin = current;
                 let id = getNameAndGo();
                 if (css.charAt(current) === '(') {
-                    //debugger;
                     if (unpackPseudos.hasOwnProperty(id)) {
                         let quot = css.charAt(current + 1);
                         let quoted = quot in quotes;
@@ -365,6 +400,7 @@ let parse = (css, file, refAtRules) => {
         }
     }
     return {
+        vars,
         tokens,
         nests
     };

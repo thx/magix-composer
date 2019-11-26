@@ -63,9 +63,6 @@ module.exports = (content) => {
     });*/
     snippetReg.lastIndex = 0;
     let isSnippet = snippetReg.test(content);
-    if (isSnippet) {
-        addWrapper = false;
-    }
     content = content.replace(snippetReg, '\n');
     let loader;
     content = content.replace(loaderReg, (m, q, type) => {
@@ -73,17 +70,23 @@ module.exports = (content) => {
         return '\r\n';
     });
     let exRequires = [];
+    let noRequires = false;
     content = content.replace(exRequiresReg, (m, q, reqs) => {
-        exRequires = reqs.split(',').map(i => {
-            i = i.trim();
-            if (i.startsWith('\'') && i.endsWith('\'')) {
-                i = i.slice(1, -1);
-            }
-            if (!i.startsWith('"') && !i.endsWith('"')) {
-                i = `"${i}"`;
-            }
-            return i;
-        });
+        reqs = reqs.trim();
+        if (reqs == 'true') {
+            noRequires = true;
+        } else {
+            exRequires = reqs.split(',').map(i => {
+                i = i.trim();
+                if (i.startsWith('\'') && i.endsWith('\'')) {
+                    i = i.slice(1, -1);
+                }
+                if (!i.startsWith('"') && !i.endsWith('"')) {
+                    i = `"${i}"`;
+                }
+                return i;
+            });
+        }
         return '\r\n';
     });
     return {
@@ -93,6 +96,7 @@ module.exports = (content) => {
         //checkerCfg,
         loader,
         exRequires,
+        noRequires,
         //thisAlias,
         ignoreAllProcessor,
         execBeforeProcessor,

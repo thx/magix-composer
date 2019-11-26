@@ -60,7 +60,7 @@ let handleStartTag = (match, pos, endPos, attrsEndPos, handler) => {
     let unary = empty[tagName] || !!unarySlash;
     let attrsMap = {};
     let attrs = match.attrs.map((args) => {
-        let name, value, customAssign, quote;
+        let name, value;
 
         // hackish work around FF bug https://bugzilla.mozilla.org/show_bug.cgi?id=369778
         if (IS_REGEX_CAPTURING_BROKEN && args[0].indexOf('""') === -1) {
@@ -68,26 +68,16 @@ let handleStartTag = (match, pos, endPos, attrsEndPos, handler) => {
             if (args[4] === '') { delete args[4]; }
             if (args[5] === '') { delete args[5]; }
         }
-
-        let populate = (index) => {
-            customAssign = args[index];
-            value = args[index + 1];
-            if (typeof value !== 'undefined') {
-                return '"';
+        if (!name && (name = args[1])) {
+            value = args[3];
+            if (value === undefined) {
+                value = args[4];
             }
-            value = args[index + 2];
-            if (typeof value !== 'undefined') {
-                return '\'';
+            if (value == undefined) {
+                value = args[5];
             }
-            value = args[index + 3];
-            return '';
-        };
-
-        let j = 1;
-
-        if (!name && (name = args[j])) {
-            quote = populate(j + 1);
         }
+
         attrsMap[name] = value;
         return {
             name: name,
@@ -101,7 +91,9 @@ let handleStartTag = (match, pos, endPos, attrsEndPos, handler) => {
     }
 
     if (handler.start) {
-        handler.start(tagName, attrs, unary, {
+        handler.start(tagName, {
+            attrs,
+            unary,
             unarySlash,
             attrsMap,
             start: pos,
@@ -167,7 +159,11 @@ let parser = (html, handler) => {
                     if (handler.end) {
                         let left = endTagInfo.indexOf(tag) + tag.length;
                         let right = endTagInfo.lastIndexOf('>');
-                        handler.end(tag, pos, pos + endTagMatch[0].length, endTagInfo.substring(left, right));
+                        handler.end(tag, {
+                            start: pos,
+                            end: pos + endTagMatch[0].length,
+                            attrs: endTagInfo.substring(left, right)
+                        });
                     }
                 });
                 pos += endTagMatch[0].length;
@@ -184,7 +180,7 @@ let parser = (html, handler) => {
                     let reg = new RegExp(new RegExp('([\\s\\S]*?)(</' + tn + '[^>]*>)', 'i'));
                     html = html.replace(reg, (m, text, end) => {
                         if (handler.chars) {
-                            handler.chars(text, pos, pos + text.length);
+                            handler.chars(text, { start: pos, end: pos + text.length });
                         }
                         pos += text.length;
                         return end;

@@ -5,7 +5,6 @@ let fs = require('fs');
 let path = require('path');
 
 let less = require('less');
-let sass = require('node-sass');
 let chalk = require('chalk');
 let util = require('util');
 
@@ -33,7 +32,7 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
         before = Promise.resolve(cfg);
     }
     before.then(e => {
-        if (e.ext == '.scss' || e.ext == '.sass') {
+        /*if (e.ext == '.scss' || e.ext == '.sass') {
             let cssCompileConfigs = {};
             utils.cloneAssign(cssCompileConfigs, configs.sass);
             if (configs.debug) {
@@ -63,7 +62,7 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
                     content: result.css.toString()
                 });
             });
-        } else if (e.ext == '.less') {
+        } else */if (e.ext == '.less') {
             let cssCompileConfigs = {};
             utils.cloneAssign(cssCompileConfigs, configs.less);
             cssCompileConfigs.paths = [path.dirname(e.file)];
@@ -122,7 +121,13 @@ module.exports = (file, e, source, ext, refInnerStyle) => {
                 }).then(css => {
                     info.content = css;
                     done(info);
-                }).catch(reject);
+                }).catch((...args) => {
+                    let e = args[0];
+                    if (e && e.name == 'CssSyntaxError') {
+                        slog.ever(chalk.red('[MXC Error(css-read)]'), 'autoprefixer error:', chalk.red(e.reason), 'at', chalk.grey(shortFile), 'at line', chalk.magenta(e.line));
+                    }
+                    reject(args);
+                });
             } else {
                 done(info);
             }

@@ -21,22 +21,23 @@ let jsSnippet = require('./js-snippet');
 let jsReplacer = require('./js-replacer');
 let jsHeader = require('./js-header');
 let acorn = require('./js-acorn');
-let consts = require('./util-const');
+let { galleryProcessed, revisableGReg } = require('./util-const');
 let deps = require('./util-deps');
+let httpProtocolReg = /^['"`]https?:/i;
 
 let lineBreakReg = /\r\n?|\n|\u2028|\u2029/;
 let mxTailReg = /\.m?mx$/;
 let stringReg = /^['"]/;
 //文件内容处理，主要是把各个处理模块串起来
 let moduleIdReg = /@(?:moduleId|id)/;
-let cssFileReg = /@(?:[\w\.\-\/\\]+?)\.(?:css|less|scss|sass|mx|style)/;
+let cssFileReg = /@(?:[\w\.\-\/\\]+?)\.(?:css|less|mx|style)/;
 let cssFileGlobalReg = new RegExp(cssFileReg, 'g');
 let jsFileReg = /([a-z,&]+)?@([\w\.\-\/\\]+\.(?:[jt]s))/;
 let doubleAtReg = /@@/g;
 let isGalleryConfig = file => {
     let cfg = configs.galleriesDynamicRequires[file];
     if (cfg) {
-        delete cfg[consts.galleryProcessed];
+        delete cfg[galleryProcessed];
         let files = deps.getConfigDependents(file);
         for (let p in files) {
             fileCache.clear(p);
@@ -70,7 +71,7 @@ let processContent = (from, to, content, inwatch) => {
     let headers = jsHeader(content);
     content = headers.content;
 
-    let key = [inwatch, headers.addWrapper].join('\u0000');
+    let key = [inwatch, headers.addWrapper].join('\x00');
     let fInfo = fileCache.get(from, key);
     if (fInfo) {
         return Promise.resolve(fInfo);
@@ -94,6 +95,7 @@ let processContent = (from, to, content, inwatch) => {
         loaderFactory: configs.loaderFactory,
         isSnippet: headers.isSnippet,
         exRequires: headers.exRequires,
+        noRequires: headers.noRequires,
         processContent
     };
     if (isGalleryConfig(from)) {
@@ -112,8 +114,7 @@ let processContent = (from, to, content, inwatch) => {
     psychic.exRequires.push(`"${moduleId}"`);
     //let originalContent = content;
     if (headers.execBeforeProcessor) {
-        let processor = configs.compileJSStart;
-        let result = processor(content, psychic);
+        let result = configs.compileJSStart(content, psychic);
         if (util.isString(result)) {
             before = Promise.resolve(result);
         } else if (result && util.isFunction(result.then)) {
@@ -128,6 +129,32 @@ let processContent = (from, to, content, inwatch) => {
             psychic.content = content;
         }
         return jsDeps.process(psychic);
+    }).then(e => {
+        //console.log(e.content);
+        let newRequires = [];
+        if (!e.noRequires) {
+            for (let req of e.requires) {
+                req = req.slice(1, -1);
+                let idx = req.indexOf('/');
+                let mName = idx === -1 ? null : req.substring(0, idx);
+                let p, full;
+                if (mName === e.pkgName) {
+                    p = atpath.resolvePath(`"@${req}"`, e.moduleId);
+                } else {
+                    p = `"${req}"`;
+                }
+                full = atpath.resolvePath('"@' + p.slice(1, -1) + '"', e.moduleId);
+                if (e.exRequires.indexOf(p) == -1 &&
+                    e.exRequires.indexOf(full) == -1 &&
+                    newRequires.indexOf(p) == -1 &&
+                    newRequires.indexOf(full) == -1) {
+                    newRequires.push(`"${req}"`);
+                }
+            }
+        }
+        e.requires.length = 0;
+        e.requires.push(...newRequires);
+        return Promise.resolve(e);
     }).then(e => {
         if (headers.ignoreAllProcessor) {
             return Promise.resolve(e);
@@ -158,7 +185,7 @@ let processContent = (from, to, content, inwatch) => {
             let add = false;
             let raw = node.raw;
             if (!configs.debug) {
-                node.raw = raw.replace(consts.revisableGReg, m => {
+                node.raw = raw.replace(revisableGReg, m => {
                     add = true;
                     return md5(m, 'revisableString', configs.revisableStringPrefix);
                 });
@@ -182,7 +209,7 @@ let processContent = (from, to, content, inwatch) => {
                 node.raw = raw.replace(cssFileGlobalReg, (m, offset) => {
                     let c = raw.charAt(offset - 1);
                     if (c == '@') return m.substring(1);
-                    return m.replace('@', '\u0012@');
+                    return m.replace('@', '\x12@');
                 }).replace(doubleAtReg, '@');
                 add = true;
             } else if (configs.htmlFileReg.test(raw)) {
@@ -231,13 +258,13 @@ let processContent = (from, to, content, inwatch) => {
                                 }
                             }
                         } else {
-                            replacement = raw.replace(/@/g, '\u0012@');
+                            replacement = raw.replace(/@/g, '\x12@');
                         }
                     });
                     node.raw = replacement;
                     add = true;
                 }
-            } else if (configs.useAtPathConverter) {
+            } else {
                 //字符串以@开头，且包含/
                 let i = tl ? 0 : 1;
                 if (raw.charAt(i) == '@' && raw.indexOf('/') > 0) {
@@ -259,6 +286,7 @@ let processContent = (from, to, content, inwatch) => {
                 }
             }
             raw = node.raw.replace(doubleAtReg, '@');
+            //console.log(raw);
             if (raw != node.raw) {
                 node.raw = raw;
                 add = true;
@@ -312,7 +340,7 @@ let processContent = (from, to, content, inwatch) => {
             return Promise.resolve(e);
         }
         if (contentInfo) e.contentInfo = contentInfo;
-        return cssProcessor(e, inwatch);
+        return cssProcessor(e);
     }).then(e => {
         if (headers.ignoreAllProcessor) {
             return Promise.resolve(e);
@@ -321,38 +349,48 @@ let processContent = (from, to, content, inwatch) => {
     }).then(e => {
         if (e.addedWrapper) {
             let mxViews = e.tmplMxViewsArray || [];
+            let addDeps = configs.tmplAddViewsToDependencies;
+            if (e.noRequires || !addDeps) mxViews = [];
+            mxViews = mxViews.concat(e.tmplComponents || []);
             let reqs = [],
                 vars = [];
             for (let v of mxViews) {
                 let i = v.indexOf('/');
-                let mName = i === -1 ? null : v.substring(0, i);
+                let mName = i === -1 ? v : v.substring(0, i);
                 let p, full;
                 if (mName === e.pkgName) {
                     p = atpath.resolvePath('"@' + v + '"', e.moduleId);
+                    full = v[0] == '@' ? p : atpath.resolvePath('"@' + p.slice(1, -1) + '"', e.moduleId);
                 } else {
+                    full = v;
                     p = `"${v}"`;
                 }
-                full = atpath.resolvePath('"@' + p.slice(1, -1) + '"', e.moduleId);
-                let reqInfo = {
-                    prefix: '',
-                    tail: ';',
-                    vId: '',
-                    mId: p.slice(1, -1),
-                    full: full,
-                    from: 'view',
-                    raw: 'mx-view="' + v + '"'
-                };
                 if (e.deps.indexOf(p) === -1 &&
-                    e.deps.indexOf(reqInfo.full) === -1 &&
+                    e.deps.indexOf(full) === -1 &&
                     e.exRequires.indexOf(p) === -1 &&
-                    e.exRequires.indexOf(reqInfo.full) == -1) {
+                    e.exRequires.indexOf(full) == -1 &&
+                    (e.loader != 'module' ||
+                        p[1] == '.' ||
+                        httpProtocolReg.test(p))) {
+                    let prefix = '',
+                        type = '';
                     if (e.loader == 'module') {
-                        reqInfo.prefix = 'import ';
-                        reqInfo.type = 'import';
+                        prefix = 'import ';
+                        type = 'import';
                     } else {
-                        reqInfo.type = 'require';
+                        type = 'require';
                     }
-                    let replacement = jsDeps.getReqReplacement(reqInfo, e);
+                    let reqInfo = {
+                        prefix,
+                        type,
+                        tail: ';',
+                        vId: '',
+                        mId: p.slice(1, -1),
+                        full,
+                        from: 'view',
+                        raw: 'mx-view="' + v + '"'
+                    };
+                    let replacement = jsDeps.getReqReplacement(reqInfo, e, true);
                     vars.push(replacement);
                     if (reqInfo.mId) {
                         let dId = JSON.stringify(reqInfo.mId);

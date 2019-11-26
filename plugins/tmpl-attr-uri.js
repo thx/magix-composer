@@ -5,14 +5,16 @@
  * 因为属性中不区分大小写，因此约定的user-id会转成userId
  * src中的参数不作任何处理，只把属性中的参数追加到src中
  */
-let checker = require('./checker');
 let tmplCmd = require('./tmpl-cmd');
 let tmplUnescape = require('html-entities-decoder');
 let classRef = require('./tmpl-attr-classref');
 let atpath = require('./util-atpath');
-let configs = require('./util-config');
-let tmplChecker = checker.Tmpl;
-let cmdReg = /\u0007\d+\u0007/g;
+let { htmlAttrParamPrefix,
+    tmplCondPrefix,
+    tmplVarTempKey } = require('./util-const');
+let regexp = require('./util-rcache');
+let tmplChecker = require('./checker-tmpl');
+let cmdReg = /\x07\d+\x07/g;
 let dOutCmdReg = /<%=([\s\S]+?)%>/g;
 let encodeMore = {
     '!': '%21',
@@ -23,17 +25,22 @@ let encodeMore = {
 };
 
 let encodeMoreReg = /[!')(*]/g;
+let gorupRef = '@group:';
 let encodeReplacor = m => encodeMore[m];
-let paramsReg = /\s(\x1c\d+\x1c)?param-([\w\-]+)=(["'])([\s\S]*?)\3/g;
-let paramPrefix = 'param-';
-
+let paramsReg = regexp.get(`\\s(\\x1c\\d+\\x1c)?${regexp.escape(htmlAttrParamPrefix)}([\\w\\-]+)=(["'])([\\s\\S]*?)\\3`, 'g');
+let condReg = regexp.get(`\\s${regexp.escape(tmplCondPrefix)}(\\x1c\\d+\\x1c)=(["'])([\\s\\S]*?)\\2`, 'g');
 module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
     let attrs = [];
     let ac = 0;
     let classLocker = Object.create(null);
-    match = match.replace(paramsReg, (m, cond, name, q, content) => {
-        name = tmplChecker.checkMxViewParams(name, e, paramPrefix);
+    let condObjects = Object.create(null);
+    match = match.replace(condReg, (m, cond, q, content) => {
+        condObjects[cond] = content;
+        return m;
+    }).replace(paramsReg, (m, cond, name, q, content) => {
+        name = tmplChecker.checkMxViewParams(name, e, htmlAttrParamPrefix);
         let cmdTemp = []; //处理属性中带命令的情况
+        let ci = e.tmplConditionAttrs[cond];
         let cs = content.split(cmdReg); //按命令拆分，则剩余的都是普通字符串
         content.replace(cmdReg, cm => {
             cmdTemp.push(cm); //把命令暂存下来
@@ -49,16 +56,23 @@ module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
             }
         }
         content = cs.join('');
-        if (cond) {
-            let ci = e.tmplConditionAttrs[cond];
+        if (ci) {
+            let oCond = condObjects[cond];
+            let extract = tmplCmd.extractCmdContent(oCond, refTmplCommands);
+            let isRef = extract.operate == '@';
+            let ref = tmplCmd.extractRefContent(extract.content);
             let art = '';
-            if (ci.isArt) {
-                art = `<%'${ci.line}\x11${ci.art}\x11'%>`;
+            if (extract.isArt) {
+                art = `<%'${extract.line}\x11${extract.art}\x11'%>`;
             }
-            if (ci.hasContent) {
-                attrs.push(`${art}<%if((${ci.content})${ci.valuable ? '!=null' : ''}){%>${ac == 0 ? '' : '&'}${name}=${content}<%}%>`);
+            if (ci.hasExt) {
+                attrs.push(`${art}<%if((${isRef ? ref.vars : extract.content})${ci.valuable ? '!=null' : ''}){%>${ac == 0 ? '' : '&'}${name}=${content}<%}%>`);
             } else {
-                attrs.push(`${art}<%if((${configs.tmplVarTempKey}=${ci.content})${ci.valuable ? '!=null' : ''}){%>${ac == 0 ? '' : '&'}${name}=<%${ci.operate}${configs.tmplVarTempKey}%><%}%>`);
+                if (isRef) {
+                    attrs.push(`${art}<%if((${tmplVarTempKey}=${ref.vars})${ci.valuable ? '!=null' : ''}){%>${ac == 0 ? '' : '&'}${name}=<%${extract.operate}${tmplVarTempKey},${ref.key}%><%}%>`);
+                } else {
+                    attrs.push(`${art}<%if((${tmplVarTempKey}=${extract.content})${ci.valuable ? '!=null' : ''}){%>${ac == 0 ? '' : '&'}${name}=<%${extract.operate}${tmplVarTempKey}%><%}%>`);
+                }
             }
             ac++;
         } else {

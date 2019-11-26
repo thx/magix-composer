@@ -4,14 +4,15 @@
  */
 let regexp = require('./util-rcache');
 let utils = require('./util');
+let regxer = require('./util-rcache');
 let package = require('../package.json');
 let anchorKey = utils.uId('\x1e', '');
-let header = `/*\r\n    generate by magix-combine@${package.version}\r\n     https://github.com/thx/magix-combine\r\n    author: kooboy_li@163.com\r\n    loader:\${loader}\r\n */\r\n`;
+let header = `/*!${package.version} kooboy_li@163.com*/\r\n/*\r\n    generate by magix-composer@${package.version}\r\n    https://github.com/thx/magix-composer\r\n    author: xinglie.lkf@alibaba-inc.com\r\n    loader:\${loader}\r\n */\r\n`;
 let reqsAnchorKey = `/*${anchorKey}_requires*/`;
 let varsAnchorKey = `/*${anchorKey}_vars*/`;
 let tmpls = {
-    cmd: '${loaderFactory}("${moduleId}",[${requires}' + reqsAnchorKey + '],function(require,exports,module){\r\n/*${vars}*/\r\n' + varsAnchorKey + '\r\n${content}\r\n});',
-    cmd_es: '${loaderFactory}("${moduleId}",[${requires}' + reqsAnchorKey + '],(require,exports,module)=>{\r\n/*${vars}*/\r\n' + varsAnchorKey + '\r\n${content}\r\n});',
+    cmd: '${loaderFactory}("${moduleId}",[${requires}' + reqsAnchorKey + '],function(require,exports,module){\r\n' + varsAnchorKey + '\r\n${content}\r\n});',
+    cmd_es: '${loaderFactory}("${moduleId}",[${requires}' + reqsAnchorKey + '],(require,exports,module)=>{\r\n' + varsAnchorKey + '\r\n${content}\r\n});',
     amd: '${loaderFactory}("${moduleId}",["require","exports","module",${requires}' + reqsAnchorKey + '],function(require,exports,module){\r\n' + varsAnchorKey + '\r\n${content}\r\n});',
     amd_es: '${loaderFactory}("${moduleId}",["require","exports","module",${requires}' + reqsAnchorKey + '],(require,exports,module)=>{\r\n' + varsAnchorKey + '\r\n${content}\r\n});',
     webpack: varsAnchorKey + '\r\n${content}',
@@ -32,7 +33,7 @@ module.exports = e => {
     let tmpl = header + (tmpls[loader] || tmpls.iife);
     for (let p in e) {
         let reg = regexp.get('\\$\\{' + p + '\\}', 'g');
-        let v = e[p] || '';
+        let v = regxer.encode(e[p] || '');
         tmpl = tmpl.replace(reg, v);
     }
     return tmpl;

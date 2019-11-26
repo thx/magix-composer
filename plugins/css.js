@@ -6,21 +6,19 @@ let cssnano = require('cssnano');
 let path = require('path');
 let configs = require('./util-config');
 let atpath = require('./util-atpath');
-let cssAtRule = require('./css-atrule');
 let cssFileRead = require('./css-read');
 let deps = require('./util-deps');
-let checker = require('./checker');
+let cssChecker = require('./checker-css');
 let cssGlobal = require('./css-global');
 let cssComment = require('./css-comment');
 let utils = require('./util');
 let cloneAssign = utils.cloneAssign;
+let cssTransform = require('./css-transform');
 let {
-    cssNameNewProcessor,
-    cssNameGlobalProcessor,
-    genCssNamesKey,
-    cssRefReg,
-    refProcessor
-} = require('./css-selector');
+    styleInJSFileReg,
+    cssVarRefReg,
+    cssRefReg
+} = require('./util-const');
 //处理css文件
 //另外一个思路是：解析出js中的字符串，然后在字符串中做替换就会更保险，目前先不这样做。
 //https://github.com/Automattic/xgettext-js
@@ -29,204 +27,232 @@ let {
 //[ref="@../default.css:inmain"] .open{
 //    color:red
 //}
-let cssTmplReg = /(\()?\s*(['"]?)\(?(global|ref|names)?\x12@([\w\.\-\/\\]+?)(\.css|\.less|\.scss|\.sass|\.mx|\.mmx|\.style)(?::?\[([\w-,]+)\]|:\.?([\w\-]+))?\)?\2\s*(\))?(;?)/g;
+let cssVarReg = /var\s*\(\s*([^)\s]+)\s*(?=[,)])/g;
 let sep = path.sep;
 
 
-module.exports = (e, inwatch) => {
-    if (inwatch) {
-        checker.CSS.clearUsed(e.from);
-        checker.CSS.clearUsedTags(e.from);
-    }
-    let cssNamesMap = Object.create(null);
-    let cssNamesToFiles = Object.create(null);
-    let cssNamesKey;
-    let addToGlobalCSS = true;
-
-    let gCSSNamesMap = Object.create(null);
-    let gCSSNamesToFiles = Object.create(null);
-    let currentFile = '';
+module.exports = e => {
+    let globalNamesMap = Object.create(null);
+    let globalVarsMap = Object.create(null);
     let cssContentCache = Object.create(null);
-    let gCSSTagToFiles = Object.create(null);
-    let sRefAtRules = Object.create(null);
-
+    configs.scopedCss.forEach(sc => {
+        deps.addFileDepend(sc, e.from, e.to);
+        cssChecker.hostAddStyle(e.from, sc);
+    });
     return cssGlobal.process({
-        context: e,
-        inwatch: inwatch
+        context: e
     }).then(gInfo => {
-        //console.log(e.cssNamesInFiles);
-        //console.log('global', gCSSNamesMap);
         return new Promise((resolve, reject) => {
-            cloneAssign(gCSSNamesMap, gInfo.globalCssNamesMap);
-            cloneAssign(gCSSNamesToFiles, gInfo.globalCssNamesInFiles);
-            cloneAssign(gCSSTagToFiles, gInfo.globalCssTagsInFiles);
-            cloneAssign(sRefAtRules, gInfo.scopedRefAtRules);
-            e.cssNamesMap = gCSSNamesMap;
-            e.cssNamesInFiles = gCSSNamesToFiles;
-            e.cssTagsInFiles = gCSSTagToFiles;
-            cssTmplReg.lastIndex = 0;
-            if (cssTmplReg.test(e.content)) { //有需要处理的@规则
-                cssTmplReg.lastIndex = 0;
+            cloneAssign(globalNamesMap, gInfo.namesMap);
+            cloneAssign(globalVarsMap, gInfo.varsMap);
+            e.cssNamesMap = globalNamesMap;
+            e.cssVarsMap = globalVarsMap;
+            styleInJSFileReg.lastIndex = 0;
+            if (styleInJSFileReg.test(e.content)) { //有需要处理的@规则
+                styleInJSFileReg.lastIndex = 0;
                 let count = 0;
                 let tempMatchToFile = Object.create(null);
                 let folder = path.dirname(e.from);
-                let cmtStores = Object.create(null);
+                let storeHostUsed = (scoped, file, selectors, vars, varsIsGlobal) => {
+                    if (scoped) {
+                        if (selectors) {
+                            let dest = gInfo.declaredFiles.selectors[selectors];
+                            if (dest) {
+                                cssChecker.storeHostUsed(e.from, dest, {
+                                    selectors: {
+                                        [selectors]: 1
+                                    }
+                                });
+                            } else {
+                                cssChecker.storeUnexist(e.from, 'selectors ' + selectors + ' from scoped.style');
+                            }
+                        }
+                        if (vars) {
+                            if (varsIsGlobal) {
+                                cssChecker.storeStyleGlobalVars(e.from, vars);
+                            } else {
+                                let dest = gInfo.declaredFiles.vars[s];
+                                if (dest) {
+                                    cssChecker.storeHostUsed(e.from, dest, {
+                                        vars: {
+                                            [s]: 1
+                                        }
+                                    });
+                                } else {
+                                    cssChecker.storeUnexist(e.from, 'vars ' + s + ' from scoped.style');
+                                }
+                            }
+                        }
+                    } else {
+                        let temp = {};
+                        if (selectors) {
+                            temp.selectors = {
+                                [selectors]: 1
+                            };
+                        }
+                        if (vars) {
+                            temp.vars = {
+                                [vars]: 1
+                            };
+                        }
+                        cssChecker.storeHostUsed(e.from, file, temp);
+                    }
+                };
+                let processVars = (c, f, lf) => {
+                    return c.replace(cssVarReg, (m, key) => {
+                        let r = globalVarsMap[key];
+                        if (!r) {
+                            if (cssVarRefReg.test(key)) {
+                                while (cssVarRefReg.test(m)) {
+                                    m = m.replace(cssVarRefReg, (_1, _2, fn, ext, key) => {
+                                        return cssTransform.varRefProcessor(lf, fn, ext, key, {
+                                            globalCssVarsMap: gInfo.varsMap
+                                        });
+                                    });
+                                }
+                                return m;
+                            } else {
+                                let { isGlobal, key: k2 } = cssTransform.processVar(key);
+                                if (isGlobal) {
+                                    r = k2;
+                                    cssChecker.storeStyleGlobalVars(lf, key);
+                                } else {
+                                    cssChecker.storeStyleGlobalVars(lf, key);
+                                    return m;
+                                }
+                            }
+                        }
+                        return `var(${r}`;
+                    });
+                };
                 let resume = () => {
-                    e.content = e.content.replace(cssTmplReg, (m, left, q, prefix, name, ext, keys, key, right, tail) => {
+                    e.content = e.content.replace(styleInJSFileReg, (m, left, q, prefix, name, ext, key, right, tail) => {
+                        if (!prefix &&
+                            !key &&
+                            (left != '(' || right != ')')) {
+                            m = m.replace('\x12@', '@');
+                            return m;
+                        }
                         let info = tempMatchToFile[m];
                         let { file,
                             scopedStyle,
-                            shortCssFile,
-                            globalStyle,
-                            markUsedFiles } = info;
+                            shortCssFile } = info;
                         let fileName = path.basename(file);
                         let r = cssContentCache[file];
                         //从缓存中获取当前文件的信息
                         //如果不存在就返回一个不存在的提示
                         if (!r.exists) {
-                            if (q) {
-                                m = m.slice(1, -1);
+                            m = name + ext;
+                            cssChecker.storeUnexist(e.from, m);
+                            if (key) {
+                                return (q || '') + `unfound file:${name}${ext}` + (q || '') + (tail || '');
                             }
-                            checker.CSS.markUnexists(m, e.from);
-                            return ['\'$throw_' + name + ext + '\'', q + 'unfound:' + name + ext + q];
+                            return [(left || '') + '\'$throw_' + name + ext + '\'', q + 'unfound style file:' + name + ext + q + (right || '')];
                         }
                         let fileContent = r.css;
-                        let store = cmtStores[file];
-                        if (store) {
-                            fileContent = cssComment.recover(fileContent, store);
-                        }
-                        cssNamesKey = genCssNamesKey(file);
-                        if (scopedStyle || globalStyle) {
-                            cssNamesMap = gCSSNamesMap;
+                        let cssNamesKey = cssTransform.genCssNamesKey(file);
+                        let cssNamesMap,
+                            cssVarsMap,
+                            newContent,
+                            addToGlobalCSS;
+                        if (scopedStyle) {
+                            cssNamesMap = globalNamesMap;
+                            cssVarsMap = globalVarsMap;
                         } else {
-                            cssNamesMap = Object.create(null);
-                            cssNamesToFiles = Object.create(null);
-                            currentFile = file;
-                            let cssTagsToFiles = Object.create(null);
-                            let cssTagsMap = Object.create(null);
-                            if (prefix != 'global') { //如果不是项目中全局使用的
-                                addToGlobalCSS = prefix != 'names'; //不是读取css名称对象的
-                                if (keys || key) { //有后缀时也不添加到全局
-                                    addToGlobalCSS = false;
-                                }
-                                if (!r.cssNames) {
-                                    fileContent = fileContent.replace(cssRefReg, (m, q, f, ext, selector) => {
-                                        let s = refProcessor(file, f, ext, selector, gInfo);
-                                        sRefAtRules[s] = m;
-                                        return s;
+                            addToGlobalCSS = key ? false : true; //有后缀时也不添加到全局
+                            if (!r.namesMap) {
+                                cssNamesMap = Object.create(null);
+                                cssVarsMap = Object.create(null);
+                                fileContent = fileContent.replace(cssRefReg, (m, q, f, ext, selector) => {
+                                    let s = cssTransform.refProcessor(file, f, ext, selector, {
+                                        globalCssNamesMap: globalNamesMap,
+                                        globalCssDeclaredFiles: gInfo.declaredFiles
                                     });
-                                    try {
-                                        fileContent = cssNameNewProcessor(fileContent, {
-                                            refAtRules: sRefAtRules,
-                                            shortFile: shortCssFile,
-                                            namesMap: gCSSNamesMap,
-                                            globalReservedMap: gInfo.globalReservedMap,
-                                            namesToFiles: gCSSNamesToFiles,
-                                            namesKey: cssNamesKey,
-                                            cNamesMap: cssNamesMap,
-                                            cNamesToFiles: cssNamesToFiles,
-                                            addToGlobalCSS: addToGlobalCSS,
-                                            file: currentFile,
-                                            fileTags: cssTagsMap,
-                                            tagsToFiles: cssTagsToFiles
-                                        });
-                                    } catch (ex) {
-                                        reject(ex);
-                                    }
-                                    //@规则处理
-                                    fileContent = cssAtRule(fileContent, cssNamesKey, false, gInfo);
-                                    //if (addToGlobalCSS) {
-                                    r.cssNames = cssNamesMap;
-                                    r.fileContent = fileContent;
-                                    r.namesToFiles = cssNamesToFiles;
-                                    r.tagsToFiles = cssTagsToFiles;
-                                    r.cssTags = cssTagsMap;
-                                    cloneAssign(gCSSTagToFiles, cssTagsToFiles);
-                                    checker.CSS.fileToTags(file, cssTagsMap, inwatch);
-                                    checker.CSS.fileToSelectors(file, cssNamesMap, inwatch);
-                                    //}
-                                } else {
-                                    cssNamesMap = r.cssNames;
-                                    cssNamesToFiles = r.namesToFiles;
-                                    cssTagsToFiles = r.tagsToFiles;
-                                    fileContent = r.fileContent;
-                                    if (addToGlobalCSS) {
-                                        cloneAssign(gCSSNamesMap, cssNamesMap);
-                                        cloneAssign(gCSSNamesToFiles, cssNamesToFiles);
-                                        cloneAssign(gCSSTagToFiles, cssTagsToFiles);
-                                    }
+                                    return s;
+                                });
+                                try {
+                                    newContent = cssTransform.cssContentProcessor(fileContent, {
+                                        shortFile: shortCssFile,
+                                        file,
+                                        namesKey: cssNamesKey,
+                                        namesMap: cssNamesMap,
+                                        varsMap: cssVarsMap
+                                    });
+                                } catch (ex) {
+                                    reject(ex);
+                                }
+                                cssChecker.storeStyleDeclared(file, {
+                                    vars: newContent.vars,
+                                    selectors: newContent.selectors,
+                                    tagsOrAttrs: newContent.tagsOrAttrs
+                                });
+                                fileContent = newContent.content;
+                                r.namesMap = cssNamesMap;
+                                r.varsMap = cssVarsMap;
+                                r.fileContent = fileContent;
+                                if (addToGlobalCSS) {
+                                    cloneAssign(globalNamesMap, cssNamesMap);
+                                    cloneAssign(globalVarsMap, cssVarsMap);
                                 }
                             } else {
-                                //global
-                                let globals = configs.globalCss;
-                                let unchecked = configs.uncheckGlobalCss;
-                                if (globals.indexOf(file) == -1) {
-                                    if (unchecked.indexOf(file) == -1) {
-                                        fileContent = fileContent.replace(cssRefReg, (m, q, f, ext, selector) => {
-                                            let s = refProcessor(file, f, ext, selector, gInfo);
-                                            sRefAtRules[s] = m;
-                                            return s;
-                                        });
-                                        try {
-                                            cssNameGlobalProcessor(fileContent, {
-                                                refAtRules: sRefAtRules,
-                                                shortFile: shortCssFile,
-                                                namesMap: gCSSNamesMap,
-                                                namesToFiles: gCSSNamesToFiles,
-                                                cNamesMap: cssNamesMap,
-                                                cNamesToFiles: cssNamesToFiles,
-                                                lazyGlobal: true,
-                                                file: currentFile,
-                                                fileTags: cssTagsMap,
-                                                tagsToFiles: cssTagsToFiles
-                                            });
-                                        } catch (ex) {
-                                            reject(ex);
-                                        }
-                                        cloneAssign(gCSSNamesMap, cssNamesMap);
-                                        cloneAssign(gCSSTagToFiles, cssTagsToFiles);
-                                        cssGlobal.addReserved(cssNamesMap);
-                                        //checker.CSS.fileToSelectors(file, cssNamesMap, inwatch);
-                                        //checker.CSS.fileToTags(file, cssTagsMap, inwatch);
-                                    }
-                                    //checker.CSS.markGlobal(e.from, 'global@' + name + ext);
+                                cssNamesMap = r.namesMap;
+                                cssVarsMap = r.varsMap;
+                                fileContent = r.fileContent;
+                                if (addToGlobalCSS) {
+                                    cloneAssign(globalNamesMap, cssNamesMap);
+                                    cloneAssign(globalVarsMap, cssVarsMap);
                                 }
                             }
                         }
                         let replacement;
-                        if (prefix == 'names' || keys) { //如果是读取css选择器名称对象
-                            if (keys) { //从对象中只挑取某几个key
-                                checker.CSS.markUsed(markUsedFiles, keys.split(','), e.from);
-                                replacement = JSON.stringify(cssNamesMap, keys.split(','));
-                            } else { //全部名称对象
-                                checker.CSS.markUsed(markUsedFiles, Object.keys(cssNamesMap), e.from);
-                                replacement = JSON.stringify(cssNamesMap);
-                            }
-                        } else if (prefix == 'ref') { //如果是引用css则什么都不用做
+                        if (prefix == 'ref') { //如果是引用css则什么都不用做
                             replacement = '';
                             tail = '';
                         } else if (key) { //仅读取文件中的某个名称
-                            checker.CSS.markUsed(markUsedFiles, key, e.from);
-                            let c = cssNamesMap[key];
-                            if (!c) {
-                                if (configs.selectorSilentErrorCss) {
-                                    c = key;
+                            let c;
+                            if (key.startsWith('--')) {
+                                let { isGlobal, key: k2 } = cssTransform.processVar(key);
+                                if (isGlobal) {
+                                    c = k2;
                                 } else {
-                                    checker.CSS.markUnexists(m, e.from);
-                                    c = 'unfound-[' + key + ']-from-' + fileName;
+                                    c = cssVarsMap[key];
+                                    if (!c) {
+                                        if (configs.selectorSilentErrorCss) {
+                                            c = key;
+                                        } else {
+                                            c = 'unfound-[' + key + ']-from-' + fileName;
+                                        }
+                                    }
                                 }
+                                storeHostUsed(scopedStyle, file, null, key, isGlobal);
+                            } else {
+                                c = cssNamesMap[key];
+                                if (!c) {
+                                    if (configs.selectorSilentErrorCss) {
+                                        c = key;
+                                    } else {
+                                        c = 'unfound-[' + key + ']-from-' + fileName;
+                                    }
+                                }
+                                storeHostUsed(scopedStyle, file, key);
                             }
                             replacement = q + c + q;
                         } else { //输出整个css文件内容
+                            let uniqueKey = '';
+                            if (prefix != 'compiled') {
+                                uniqueKey = JSON.stringify(cssNamesKey) + ',';
+                            }
                             if (configs.debug) {
                                 if (r.map) {
                                     fileContent += r.map;
+                                    fileContent = processVars(fileContent, shortCssFile, file);
                                     let c = JSON.stringify(fileContent);
                                     c = configs.applyStyleProcessor(c, shortCssFile, cssNamesKey, e);
-                                    replacement = JSON.stringify(cssNamesKey) + ',' + c;
+                                    replacement = uniqueKey + c;
                                 } else if (r.styles) {
                                     replacement = '[';
                                     for (let s of r.styles) {
+                                        s.css = processVars(s.css, s.short, s.file);
                                         let c = JSON.stringify(s.css + (s.map || ''));
                                         c = configs.applyStyleProcessor(c, s.short, s.key, e);
                                         replacement += JSON.stringify(s.key) + ',' + c + ',';
@@ -234,14 +260,16 @@ module.exports = (e, inwatch) => {
                                     replacement = replacement.slice(0, -1);
                                     replacement += ']';
                                 } else {
+                                    fileContent = processVars(fileContent, shortCssFile, file);
                                     let c = JSON.stringify(fileContent);
                                     c = configs.applyStyleProcessor(c, shortCssFile, cssNamesKey, e);
-                                    replacement = JSON.stringify(cssNamesKey) + ',' + c;
+                                    replacement = uniqueKey + c;
                                 }
                             } else {
+                                fileContent = processVars(fileContent, shortCssFile, file);
                                 let c = JSON.stringify(fileContent);
                                 c = configs.applyStyleProcessor(c, shortCssFile, cssNamesKey, e);
-                                replacement = JSON.stringify(cssNamesKey) + ',' + c;
+                                replacement = uniqueKey + c;
                             }
                         }
                         tail = tail ? tail : '';
@@ -276,41 +304,23 @@ module.exports = (e, inwatch) => {
                     count++; //记录当前文件个数，因为文件读取是异步，我们等到当前模块依赖的css都读取完毕后才可以继续处理
 
                     let scopedStyle = false;
-                    let globalStyle = false;
                     let refInnerStyle = e.contentInfo && name == 'style';
                     let shortCssFile;
-                    let markUsedFiles;
                     if (name == 'scoped' && ext == '.style') {
                         file = name + ext;
                         scopedStyle = true;
                         shortCssFile = file;
-                        configs.scopedCss.forEach(sc => {
-                            deps.addFileDepend(sc, e.from, e.to);
-                        });
-                        markUsedFiles = configs.scopedCss;
-                    } else if (name == 'global' && ext == '.style') {
-                        file = name + ext;
-                        shortCssFile = file;
-                        globalStyle = true;
-                        configs.globalCss.forEach(sc => {
-                            deps.addFileDepend(sc, e.from, e.to);
-                        });
-                        markUsedFiles = configs.globalCss;
                     } else {
                         name = atpath.resolveName(name, e.moduleId); //先处理名称
                         if (refInnerStyle) {
                             file = e.from;
                         } else {
-                            deps.addFileDepend(file, e.from, e.to);
                             e.fileDeps[file] = 1;
                         }
-                        markUsedFiles = file;
                         shortCssFile = file.replace(configs.moduleIdRemovedPath, '').substring(1);
                     }
                     tempMatchToFile[match] = {
-                        markUsedFiles,
                         scopedStyle,
-                        globalStyle,
                         file,
                         shortCssFile
                     };
@@ -320,14 +330,8 @@ module.exports = (e, inwatch) => {
                         if (scopedStyle) {
                             promise = Promise.resolve({
                                 exists: true,
-                                content: gInfo.scopedStyle,
-                                styles: gInfo.scopedStyles
-                            });
-                        } else if (globalStyle) {
-                            promise = Promise.resolve({
-                                exists: true,
-                                content: gInfo.globalStyle,
-                                styles: gInfo.globalStyles
+                                content: gInfo.style,
+                                styles: gInfo.styles
                             });
                         } else {
                             promise = cssFileRead(file, e, match, ext, refInnerStyle);
@@ -355,8 +359,7 @@ module.exports = (e, inwatch) => {
                                     });
                                 } else {
                                     let cssStr = info.content;
-                                    let store = cmtStores[file] = Object.create(null);
-                                    cssStr = cssComment.store(cssStr, store);
+                                    cssStr = cssComment.clean(cssStr);
                                     setFileCSS(file, shortCssFile, cssStr);
                                 }
                             } else {
@@ -378,17 +381,19 @@ module.exports = (e, inwatch) => {
                         resume();
                     }
                 };
-                e.content.replace(cssTmplReg, (m, left, q, prefix, name, ext, keys, key, right) => {
-                    if ((keys || key || prefix) ||
+                e.content.replace(styleInJSFileReg, (m, left, q, prefix, name, ext, key, right) => {
+                    if ((key || prefix) ||
                         (left == '(' && right == ')')) {
                         name = atpath.resolveName(name, e.moduleId);
                         let file = path.resolve(folder + sep + name + ext);
                         if (configs.scopedCssMap[file]) {
                             name = 'scoped';
                             ext = '.style';
-                        } else if (configs.globalCssMap[file]) {
-                            name = 'global';
-                            ext = '.style';
+                        }
+                        if (name != 'scoped' ||
+                            ext != '.style') {
+                            cssChecker.hostAddStyle(e.from, file);
+                            deps.addFileDepend(file, e.from, e.to);
                         }
                         tasks.push([m, name, ext, file]);
                     }

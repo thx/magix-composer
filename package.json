@@ -1,9 +1,8 @@
 {
   "name": "magix-composer",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "compile html, style and javascript files into javascript",
   "main": "index.js",
-  "types": "index.d.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/thx/magix-composer.git"
@@ -17,18 +16,17 @@
     "offline"
   ],
   "dependencies": {
-    "acorn": "6.0.x",
-    "acorn-dynamic-import": "4.0.x",
-    "acorn-walk": "6.1.x",
-    "autoprefixer": "9.4.x",
-    "chalk": "2.4.x",
+    "acorn": "7.1.x",
+    "acorn-import-meta": "1.0.x",
+    "acorn-walk": "7.0.x",
+    "autoprefixer": "9.7.x",
+    "chalk": "3.0.x",
     "cssnano": "4.1.x",
     "html-entities-decoder": "1.0.x",
-    "html-minifier": "3.5.x",
-    "less": "3.9.x",
-    "node-sass": "4.11.x",
+    "html-minifier": "4.0.x",
+    "less": "3.10.x",
     "postcss": "7.0.x",
-    "string-width": "3.0.x"
+    "string-width": "4.2.x"
   },
   "author": "xinglie <xinglie.lkf@taobao.com>",
   "license": "MIT",

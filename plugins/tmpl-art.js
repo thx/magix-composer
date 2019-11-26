@@ -161,105 +161,109 @@ let checkStack = (stack, key, code, e, lineNo) => {
         throw new Error(`[MXC Error(tmpl-art)] unclosed art ctrls at ${e.shortHTMLFile}`);
     }
 };
-let syntax = (code, stack, e, lineNo) => {
+let syntax = (code, e, lineNo) => {
     code = code.trim();
-    let ctrls, partial;
     let temp = ifForReg.exec(code);
+    let key, expr;
     if (temp) {
-        partial = '(' + code.substring(temp[0].length);
-        ctrls = [temp[1], partial];
+        expr = '(' + code.substring(temp[0].length).trim();
+        key = temp[1];
     } else {
-        ctrls = code.split(/\s+/);
+        let space = code.indexOf(' ');
+        if (space == -1 &&
+            (code.startsWith('/') ||
+                code.startsWith('else'))) {
+            key = code;
+            expr = '';
+        } else {
+            key = code.substring(0, space);
+            expr = code.substring(space + 1).trim();
+        }
     }
-    let key = ctrls.shift();
+    //console.log(key, '@@', expr);
     let src = '';
     if (configs.debug) {
         src = `<%'${lineNo}\x11${code.replace(slashReg, '\\$&')
             .replace(lineBreakReg, '\\n')}\x11'%>`;
     }
     if (key == 'if') {
-        checkStack(stack, key, code, e, lineNo);
-        let expr = ctrls.join(' ');
-        expr = expr.trim();
         expr = artExpr.extractIfExpr(expr);
         return `${src}<%if(${expr}){%>`;
     } else if (key == 'else') {
-        checkStack(stack, key, code, e, lineNo);
         let iv = '';
-        if (ctrls.shift() == 'if') {
-            let expr = ctrls.join(' ');
+        if (expr.startsWith('if ')) {
+            expr = expr.substring(3);
             expr = artExpr.extractIfExpr(expr);
             iv = ` if(${expr})`;
         }
         return `${src}<%}else${iv}{%>`;
     } else if (key == 'each') {
-        checkStack(stack, key, code, e, lineNo);
-        let object = ctrls[0],
-            asExpr,
+        let asExpr = artExpr.extractAsExpr(expr),
+            object = asExpr.iterator,
             init = false;
-        if (ctrls.length == 1) {
-            asExpr = {};
-            ctrls[1] = 'as';
-        } else {
-            let asValue = ctrls.slice(2).join(' ');
-            asExpr = artExpr.extractAsExpr(asValue);
-            init = true;
-        }
-        if (asExpr.bad || ctrls[1] != 'as') {
+        if (asExpr.bad || asExpr.splitter != 'as') {
             slog.ever(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad each {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
             throw new Error('[MXC Error(tmpl-art)] unsupport or bad each {{' + code + '}}');
         }
-        let index = asExpr.key || utils.uId('$art_i', code);
+        if (asExpr.value) {
+            init = true;
+        }
+        let index = asExpr.index || utils.uId('$art_i', code);
         let refObj = longExpr.test(object) ? utils.uId('$art_obj', code) : object;
-        let value = init ? `let ${asExpr.vars}=${refObj}[${index}]` : '';
-        let refExpr = longExpr.test(object) ? `,${refObj}=${object}` : '';
+        let value = init ? `let ${asExpr.value}=${refObj}[${index}]` : '';
+        let refExpr = longExpr.test(object) ? `${refObj}=${object},` : '';
         let refObjCount = utils.uId(`$art_c`, code);
         let firstAndLast = '';
         let lastCount = '';
         let lastCountObj = utils.uId(`$art_lc`, code);
-        if (asExpr.last || asExpr.first) {
-            if (asExpr.first) {
-                firstAndLast += `let ${asExpr.first}=${index}===0;`;
+        let { asc, first, last } = asExpr;
+        if (last || first) {
+            if (first) {
+                if (asc) {
+                    firstAndLast += `let ${first}=${index}===0;`;
+                } else {
+                    lastCount = `,${lastCountObj}=${refObjCount}-1`;
+                    firstAndLast += `let ${first}=${index}===${lastCountObj};`;
+                }
             }
-            if (asExpr.last) {
-                lastCount = `,${lastCountObj}=${refObjCount}-1`;
-                firstAndLast += `let ${asExpr.last}=${index}===${lastCountObj};`;
+            if (last) {
+                if (asc) {
+                    lastCount = `,${lastCountObj}=${refObjCount}-1`;
+                    firstAndLast += `let ${last}=${index}===${lastCountObj};`;
+                } else {
+                    firstAndLast += `let ${last}=${index}===0;`;
+                }
             }
         }
-        return `${src}<%for(let ${index}=0${refExpr},${refObjCount}=${refObj}.length${lastCount};${index}<${refObjCount};${index}++){${firstAndLast}${value}%>`;
+        if (asc) {
+            return `${src}<%for(let ${refExpr}${index}=0,${refObjCount}=${refObj}.length${lastCount};${index}<${refObjCount};${index}++){${firstAndLast}${value}%>`;
+        }
+        return `${src}<%for(let ${refExpr}${refObjCount}=${refObj}.length,${index}=${refObjCount}${lastCount};${index}--;){${firstAndLast}${value}%>`;
     } else if (key == 'forin') {
-        checkStack(stack, key, code, e, lineNo);
-        let object = ctrls[0], asExpr,
+        let asExpr = artExpr.extractAsExpr(expr),
+            object = asExpr.iterator,
             init = false;
-        if (ctrls.length == 1) {
-            asExpr = {};
-            ctrls[1] = 'as';
-        } else {
-            let asValue = ctrls.slice(2).join(' ');
-            asExpr = artExpr.extractAsExpr(asValue);
+        if (asExpr.value) {
             init = true;
         }
-        if (asExpr.bad || ctrls[1] != 'as') {
+        if (asExpr.bad || asExpr.splitter != 'as') {
             slog.ever(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad forin {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
             throw new Error('[MXC Error(tmpl-art)] unsupport or bad forin {{' + code + '}}');
         }
-        let key1 = asExpr.key || utils.uId('$art_k', code);
+        let key1 = asExpr.index || utils.uId('$art_k', code);
         let refObj = longExpr.test(object) ? utils.uId('$art_obj', code) : object;
-        let value = init ? `let ${asExpr.vars}=${refObj}[${key1}]` : '';
+        let value = init ? `let ${asExpr.value}=${refObj}[${key1}]` : '';
         let refExpr = longExpr.test(object) ? `let ${refObj}=${object};` : '';
         return `${src}<%${refExpr}for(let ${key1} in ${refObj}){${value}%>`;
     } else if (key == 'for') {
-        checkStack(stack, key, code, e, lineNo);
-        let expr = ctrls.join(' ').trim();
         let fi = artExpr.extractForExpr(expr);
         return `${src}<%for(${fi.expr}){%>`;
     } else if (key == 'set') {
-        return `${src}<%let ${ctrls.join(' ')};%>`;
+        return `${src}<%let ${expr};%>`;
     } else if (key == '/if' ||
         key == '/each' ||
         key == '/forin' ||
         key == '/for') {
-        checkStack(stack, key, code, e, lineNo);
         return `${src}<%}%>`;
     } else {
         return `${src}<%${code}%>`;
@@ -313,8 +317,7 @@ let findBestCode = (str, e, line) => {
     }
     return [left, right];
 };
-module.exports = (tmpl, e) => {
-    let result = [];
+let check = (tmpl, e) => {
     tmpl = artExpr.addLine(tmpl);
     let parts = tmpl.split(openTag);
     let stack = [];
@@ -322,11 +325,43 @@ module.exports = (tmpl, e) => {
         let lni = artExpr.extractArtInfo(part);
         if (lni) {
             let codes = findBestCode(lni.art, e, lni.line);
-            result.push(syntax(codes[0], stack, e, lni.line), codes[1]);
+            let context = codes[0];
+            let temp = ifForReg.exec(context);
+            let key;
+            if (temp) {
+                key = temp[1];
+            } else {
+                key = context.split(/\s+/)[0];
+            }
+            if (key == 'if' ||
+                key == 'else' ||
+                key == 'each' ||
+                key == 'forin' ||
+                key == 'for' ||
+                key == '/if' ||
+                key == '/each' ||
+                key == '/forin' ||
+                key == '/for') {
+                checkStack(stack, key, context, e, lni.line);
+            }
+        }
+    }
+    checkStack(stack, 'unclosed', '', e);
+};
+let combine = (tmpl, e) => {
+    let result = [];
+    tmpl = artExpr.addLine(tmpl);
+    let parts = tmpl.split(openTag);
+    for (let part of parts) {
+        let lni = artExpr.extractArtInfo(part);
+        if (lni) {
+            let codes = findBestCode(lni.art, e, lni.line);
+            result.push(syntax(codes[0], e, lni.line), codes[1]);
         } else {
             result.push(part);
         }
     }
-    checkStack(stack, 'unclosed', '', e);
     return artExpr.recoverEvent(result.join(''));
 };
+combine.check = check;
+module.exports = combine;

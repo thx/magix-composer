@@ -1,66 +1,184 @@
-let configs = require('./util-config');
 let jsGeneric = require('./js-generic');
+let consts = require('./util-const');
 let eventLeftReg = /\(\s*\{/g;
 let eventRightReg = /\}\s*\)/g;
 let brReg = /(?:\r\n|\r|\n)/;
 let openTag = '{{';
-let mxEventHolderReg = /\x12([^\x12]+?)\x12/g;
+let mxEventHolderReg = /\x12([^\x12]*?)\x12/g;
 let lineNoReg = /^\x1e(\d+)([\s\S]+)/;
 let removeLineNoReg = /^\{\{\x1e\d+([\s\S]+)\}\}$/;
-let extractAsExpr = expr => {
-    expr = expr.trim();
-    //解构
-    if (expr.startsWith('{') || expr.startsWith('[')) {
-        let stack = [],
-            vars = '',
-            key = '',
-            last = '',
-            first = '',
-            pos = 0,
-            bad = false;
-        for (let i = 0; i < expr.length; i++) {
-            let c = expr[i];
-            if (pos == 0) {
-                vars += c;
-            } else if (pos == 1) {
-                key += c;
-            } else if (pos == 2) {
-                last += c;
-            } else if (pos == 3) {
-                first += c;
+let sortReg = /\s+by\s+([a-zA-Z0-9]+)\s*$/i;
+let state = {
+    VARIABLE: 1,
+    STRING: 2,
+    TEMPLATE: 4
+};
+let findEntiretyUntilSpace = expr => {
+    let entire = '',
+        escaped = 0,
+        stack = [],
+        bad = false,
+        index = expr.length,
+        escapedAt = -1,
+        s = state.VARIABLE;
+    for (let i = 0; i < expr.length; i++) {
+        let c = expr[i];
+        let prev = (i - 1 == escapedAt) ? '' : expr[i - 1];
+        entire += c;
+        if (escaped &&
+            (s == state.STRING ||
+                s == state.TEMPLATE)) {
+            escaped = 0;
+            escapedAt = i;
+            continue;
+        }
+        if (c == '\\') {
+            if (s == state.STRING ||
+                s == state.TEMPLATE) {
+                escaped = !escaped;
             }
-            if (c == '{' || c == '[') {
-                stack.push(c);
-            } else if (c == '}') {
-                if (stack[stack.length - 1] == '{') {
+        } else if (c == '\'' ||
+            c == '"') {
+            let last = stack[stack.length - 1];
+            if (last.char == c) {
+                last = stack.pop();
+                s = last.state;
+            } else if (s != state.STRING ||
+                (s & state.VARIABLE) == state.VARIABLE) {
+                stack.push({
+                    char: c,
+                    state: s
+                });
+                s = state.STRING;
+            }
+        } else if (c == '`') {
+            let last = stack[stack.length - 1];
+            if (last.char == c) {
+                last = stack.pop();
+                s = last.state;
+            } else {
+                stack.push({
+                    char: c,
+                    state: s
+                });
+                s = state.TEMPLATE;
+            }
+        } else if (c == '{' ||
+            c == '[') {
+            if (c == '{' &&
+                prev == '$' &&
+                (s & state.TEMPLATE) == state.TEMPLATE) {
+                s = state.TEMPLATE | state.VARIABLE;
+                stack.push({
+                    char: c,
+                    state: s
+                });
+            } else if ((s & state.VARIABLE) == state.VARIABLE) {
+                stack.push({
+                    char: c,
+                    state: s
+                });
+            }
+        } else if (c == '}' ||
+            c == ']') {
+            if ((s & state.VARIABLE) == state.VARIABLE) {
+                let compare = c == '}' ? '{' : '[';
+                let last = stack[stack.length - 1];
+                if (last.char == compare) {
                     stack.pop();
+                    if ((s & state.TEMPLATE) == state.TEMPLATE) {
+                        //s = last.state;
+                        if (c == '}') {
+                            s = s ^ state.VARIABLE;
+                        } else {
+                            s = last.state;
+                        }
+                    }
                 } else {
                     bad = true;
                     break;
                 }
-            } else if (c == ']') {
-                if (stack[stack.length - 1] == '[') {
-                    stack.pop();
-                } else {
-                    bad = true;
-                    break;
-                }
-            } else if (c == ' ' && !stack.length) {
-                pos++;
+            }
+        } else if (c == ' ' &&
+            !stack.length) {
+            if (s == state.VARIABLE) {
+                index = i;
+                break;
             }
         }
+    }
+    if (stack.length) {
+        bad = true;
+    }
+    return {
+        index,
+        entire,
+        bad
+    };
+};
+let extractAsExpr = expr => {
+    let iterator = '',
+        splitter = '',
+        asc = true;
+    expr = expr.trim();
+    expr = expr.replace(sortReg, (m, sort) => {
+        if (sort.toLowerCase() == 'desc') {
+            asc = false;
+        }
+        return '';
+    });
+    let prefixes = findEntiretyUntilSpace(expr);
+    if (prefixes.bad) {
         return {
-            vars: vars.trim(),
-            key: key.trim(),
+            bad: true
+        };
+    }
+    iterator = prefixes.entire.trim();
+    expr = expr.substring(prefixes.index).trim();
+    let space = expr.indexOf(' ');
+    if (space == -1) {
+        splitter = 'as';
+    } else {
+        splitter = expr.substring(0, space);
+    }
+    expr = expr.substring(space + 1).trim();
+
+    //解构
+    if (expr.startsWith('{') || expr.startsWith('[')) {
+        let vars = '',
+            key = '',
+            last = '',
+            first = '';
+
+        prefixes = findEntiretyUntilSpace(expr);
+        if (prefixes.bad) {
+            return {
+                bad: true
+            };
+        }
+        expr = expr.substring(prefixes.index).trim();
+        vars = prefixes.entire.trim();
+        let exprs = expr.split(/\s+/);
+        key = exprs[0] || '';
+        last = exprs[1] || '';
+        first = exprs[2] || '';
+        return {
+            asc,
+            iterator,
+            splitter,
+            value: vars.trim(),
+            index: key.trim(),
             last: last.trim(),
-            first: first.trim(),
-            bad: bad || stack.length
+            first: first.trim()
         };
     }
     expr = expr.split(/\s+/);
     return {
-        vars: expr[0],
-        key: expr[1],
+        iterator,
+        asc,
+        splitter,
+        value: expr[0],
+        index: expr[1],
         last: expr[2],
         first: expr[3]
     };
@@ -81,9 +199,10 @@ module.exports = {
     extractForExpr,
     extractIfExpr: jsGeneric.trimParentheses,
     addLine(tmpl) {
-        tmpl = tmpl.replace(configs.tmplMxEventReg, m => {
+        tmpl = tmpl.replace(consts.tmplMxEventReg, m => {
             let hasLeft = eventLeftReg.test(m);
             let hasRight = eventRightReg.test(m);
+            //console.log(hasLeft, hasRight, m);
             return m.replace(eventLeftReg, hasRight ? '\x12' : '$&')
                 .replace(eventRightReg, hasLeft ? '\x12' : '$&');
         });

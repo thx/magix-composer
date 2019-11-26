@@ -6,7 +6,7 @@ let initEnv = require('./plugins/util-init');
 let js = require('./plugins/js');
 let jsContent = require('./plugins/js-content');
 let deps = require('./plugins/util-deps');
-let checker = require('./plugins/checker');
+let cssChecker = require('./plugins/checker-css');
 let cssGlobal = require('./plugins/css-global');
 let jsFileCache = require('./plugins/js-fcache');
 let tmplNaked = require('./plugins/tmpl-naked');
@@ -49,50 +49,50 @@ module.exports = {
         if (fs.existsSync(to)) {
             fs.unlinkSync(to);
         }
+        this.removeCache(from);
     },
     removeCache(from) {
         from = path.resolve(from);
-        checker.CSS.reset();
         jsFileCache.clear(from);
         cssGlobal.reset(from);
+        cssChecker.resetByHost(from);
+        cssChecker.resetByTemplate(from);
+        cssChecker.resetByStyle(from);
     },
     config(cfg) {
         for (let p in cfg) {
-            if (p !== 'checker' &&
+            if (p !== 'cssChecker' &&
                 p != 'tmplGlobalVars' &&
-                p != 'galleries') {
+                p != 'galleries' &&
+                p != 'components' &&
+                p != 'revisableStringMap') {
                 configs[p] = cfg[p];
             }
         }
         if (cfg) {
-            if (cfg.hasOwnProperty('checker')) {
-                if (cfg.checker) {
-                    if (util.isObject(cfg.checker)) {
-                        configs.checker = Object.assign(configs.checker, cfg.checker);
+            if (cfg.hasOwnProperty('cssChecker')) {
+                if (cfg.cssChecker) {
+                    if (util.isObject(cfg.cssChecker)) {
+                        configs.cssChecker = Object.assign(configs.cssChecker, cfg.cssChecker);
                     }
                 } else {
-                    configs.checker = {};
+                    configs.cssChecker = {};
                 }
             }
         }
         let scopedCssMap = Object.create(null);
-        let globalCssMap = Object.create(null);
-
-        configs.globalCss = configs.globalCss.map(p => {
-            p = path.resolve(p);
-            globalCssMap[p] = 1;
-            return p;
-        });
         configs.scopedCss = configs.scopedCss.map(p => {
             p = path.resolve(p);
             scopedCssMap[p] = 1;
             return p;
         });
         configs.scopedCssMap = scopedCssMap;
-        configs.globalCssMap = globalCssMap;
-        configs.uncheckGlobalCss = configs.uncheckGlobalCss.map(p => path.resolve(p));
         let specials = [{
             src: 'galleries'
+        }, {
+            src: 'revisableStringMap'
+        }, {
+            src: 'components'
         }];
         let merge = (aim, src) => {
             if (util.isObject(src)) {
@@ -164,7 +164,7 @@ module.exports = {
                         });
                     } else {
                         setTimeout(() => {
-                            checker.output();
+                            cssChecker.output();
                             slog.clear(true);
                             slog.unhook();
                             resolve();
@@ -181,7 +181,7 @@ module.exports = {
         this.removeCache(from);
         let to = path.resolve(configs.compiledFolder + from.replace(configs.moduleIdRemovedPath, ''));
         return js.process(from, to, true).then(() => {
-            checker.output();
+            cssChecker.output();
             return Promise.resolve();
         });
     },
@@ -200,11 +200,9 @@ module.exports = {
             let completed = 0;
             let tasks = [];
             fd.walk(configs.commonFolder, filepath => {
-                //if (filepath.indexOf('/nav') >= 0) {
                 let from = path.resolve(filepath);
                 total++;
                 tasks.push(from);
-                //}
             });
             let errorOccured = false;
             let current = 0;

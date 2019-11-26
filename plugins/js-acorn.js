@@ -3,16 +3,14 @@ acorn lib
  */
 let acorn = require('acorn');
 let walker = require('acorn-walk');
-let dyncmicImport = require('acorn-dynamic-import');
-let importWalk = require('acorn-dynamic-import/lib/walk');
-walker = importWalk.default(walker);
-acorn = acorn.Parser.extend(dyncmicImport.default);
+let importMeta = require('acorn-import-meta');
+acorn = acorn.Parser.extend(importMeta);
 module.exports = {
     parse(tmpl, comments, sourceFile) {
         return acorn.parse(tmpl, {
             sourceType: 'module',
-            ecmaVersion: 9,
             sourceFile,
+            ecmaVersion: 11,
             onComment(block, text, start, end) {
                 if (comments) {
                     comments[start] = {
