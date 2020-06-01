@@ -93,9 +93,20 @@ let tagsAcceptUserInput = {
     textarea: 1,
     option: 1
 };
+let escapeReg = /[<>"']/g;
+let escapeMap = {
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    '\'': '&#27;'
+};
+let escapeProcessor = m => escapeMap[m] || m;
 module.exports = {
     getInputTags() {
         return tagsAcceptUserInput;
+    },
+    escapeAttr(attr) {
+        return attr.replace(escapeReg, escapeProcessor);
     },
     getProps(tag, type) {
         let all = Object.assign({}, tagsProps['*']);

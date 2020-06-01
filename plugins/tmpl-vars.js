@@ -15,18 +15,19 @@ let {
     revisableReg,
     tmplMxViewParamKey,
     tmplCondPrefix,
-    tmplVarTempKey
+    tmplVarTempKey,
+    tmplGlobalVars
 } = require('./util-const');
 let regexp = require('./util-rcache');
-let tmplCmdReg = /<%([@=!:&*]|\.{3})?([\s\S]*?)%>|$/g;
+let tmplCmdReg = /<%([@=!:&*~]|\.{3})?([\s\S]*?)%>|$/g;
 let tagReg = /<([^>\s\/\x07]+)([^>]*)>/g;
 let bindReg = /([^>\s\/=]+)\s*=\s*(["'])(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*\2/g;
 let bindReg2 = /\s*(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*/g;
 let textaraReg = /<textarea([^>]*)>([\s\S]*?)<\/textarea>/g;
-let mxViewAttrReg = /(?:\b|\s|^)mx-view\s*=\s*(['"])([^'"]+?)\1/g;
+let mxViewAttrReg = /(?:\b|\s|^)mx-view\s*=\s*(['"])([\s\S]+?)\1/g;
 let checkboxReg = /(?:\b|\s|^)type\s*=\s*(['"])checkbox\1/;
 let indeterminateReg = /(?:\b|\s|^)indeterminate(?:\b|\s|=|$)/;
-let atRefReg = /<%@([\s\S]+?)%>/g;
+let atRefOrAnalysePathExprReg = /<%([@~])([\s\S]+?)%>/g;
 let vphUse = String.fromCharCode(0x7528); //用
 let vphDcd = String.fromCharCode(0x58f0); //声
 let vphCst = String.fromCharCode(0x56fa); //固
@@ -52,6 +53,12 @@ let stripChar = str => str.replace(creg, m => cmap[m]);
 let stripNum = str => str.replace(hreg, '$1');
 let leftOuputReg = /\x18",/g;
 let rightOutputReg = /,\s*"/g;
+let numberReg1 = /^[+-]?\.\d+(?:E[+-]?\d+)?$/i;
+let numberReg2 = /^[+-]?(?:0x|0b|0o)[0-9a-f]+$/i;
+let numberReg3 = /^[+-]?\d+\.?\d*(?:E[+-]?\d+)?$/i;
+let numberReg4 = /^[+-]?\d+n$/;
+let numberReg5 = /^[+-]?BigInt\(\s*(['"`])?\s*(?:0x|0b|0o)?[0-9a-f]+n?\s*\1\s*\)$/i;
+
 let efCache = Object.create(null);
 let extractFunctions = expr => { //获取绑定的其它附加信息，如 <%:user.name<change,input>({refresh:true,required:true})%>  =>  evts:change,input  expr user.name  fns  {refresh:true,required:true}
     let c = efCache[expr];
@@ -291,6 +298,20 @@ module.exports = {
         //console.log(tmpl);
         let htmlKey = utils.uId('\x05', tmpl);
         let htmlHolderReg = new RegExp(htmlKey + '\\d+' + htmlKey, 'g');
+        let charReg = new RegExp('(?:;`' + htmlKey + '|' + htmlKey + '`;)', 'g');
+        let toSourceHTML = src => {
+            src = src.replace(charReg, htmlKey);
+            src = stripChar(src);
+            src = src.replace(htmlHolderReg, m => htmlStore[m]);
+            src = src.replace(tmplCmdReg, (match, operate, content) => {
+                if (operate) {
+                    return '<%' + operate + content.slice(1, -1) + '%>';
+                }
+                return match;
+            });
+            return src;
+        };
+
         tmpl.replace(tmplCmdReg, (match, operate, content, offset) => {
             let start = 2;
             if (operate) {
@@ -354,7 +375,7 @@ module.exports = {
         };
         let constVars = Object.create(null);
         let patternChecker = (node, instead) => {
-            let msg = '[MXC Error(tmpl-vars)] unpupport ' + node.type + ' near `' + fn.substring(node.start, node.end) + '`';
+            let msg = '[MXC Error(tmpl-vars)] unpupport ' + node.type + ' near `' + toSourceHTML(fn.substring(node.start, node.end)) + '`';
             slog.ever(chalk.red(msg), 'at', chalk.grey(sourceFile), (instead ? chalk.magenta(`use ${instead} instead`) : ''));
             throw new Error(msg);
         };
@@ -558,7 +579,6 @@ module.exports = {
             }
         };
         let globalVars = Object.create(null);
-        let globalExists = configs.tmplGlobalVars;
         acorn.walk(ast, {
             Property(node) {
                 if (node.key.type == 'Literal') {
@@ -578,7 +598,7 @@ module.exports = {
                 let tname = node.name;
                 let r = queryVarsByPos(node.start);
                 let isGlobal = 0;
-                if (!globalExists[tname] && (
+                if (!tmplGlobalVars[tname] && (
                     !r[tname])) {
                     isGlobal = 1;
                 }
@@ -736,16 +756,7 @@ module.exports = {
                 }
             }
         });
-        let charReg = new RegExp('(?:;`' + htmlKey + '|' + htmlKey + '`;)', 'g');
-        fn = fn.replace(charReg, htmlKey);
-        fn = stripChar(fn);
-        fn = fn.replace(htmlHolderReg, m => htmlStore[m]);
-        fn = fn.replace(tmplCmdReg, (match, operate, content) => {
-            if (operate) {
-                return '<%' + operate + content.slice(1, -1) + '%>';
-            }
-            return match;
-        }); //把合法的js代码转换成原来的模板代码
+        fn = toSourceHTML(fn); //把合法的js代码转换成原来的模板代码
         let cmdStore = Object.create(null);
         let getParentRefKey = (key, pos) => {
             let list = globalTracker[key];
@@ -869,6 +880,7 @@ module.exports = {
             let takeKeys = (m, c, v) => {
                 if (c == '@') {
                     v = v.replace(refKeyReg, '');
+                    //console.log(v);
                     let ks = ExtractIds(v);
                     if (ks.length) {
                         for (let k of ks) {
@@ -883,6 +895,7 @@ module.exports = {
             attrs.replace(artCtrlsReg, '$2')
                 .replace(mxViewAttrReg, (m, q, value) => {
                     q = value.indexOf('?');
+                    //console.log(value,q);
                     if (q > -1) {
                         value = value.substring(q + 1);
                         value.replace(tmplCmdReg, takeKeys);
@@ -914,12 +927,29 @@ module.exports = {
         });
         //let mxeCount = 0;
         let tempVarsPrefixKey = 0;
+        let literalValues = Object.create(null);
+        let isLiteralValue = v => {
+            if (v === 'true' ||
+                v === 'false' ||
+                v === 'null' ||
+                v === 'undefined') {
+                return true;
+            }
+            if (numberReg1.test(v) ||
+                numberReg2.test(v) ||
+                numberReg3.test(v) ||
+                numberReg4.test(v) ||
+                numberReg5.test(v)) {
+                return true;
+            }
+            return false;
+        };
         fn = fn.replace(tagReg, (_, tag, attrs) => {
             let hasMagixView = mxViewAttrReg.test(attrs); //是否有mx-view属性
             let hasIndeter = checkboxReg.test(attrs) && indeterminateReg.test(attrs);
             attrs = tmplCmd.recover(attrs, cmdStore, recoverString); //还原
             let findCount = 0;
-            let mxeInfo = [];
+            let mxRefExprInfo = [];
             let syncPaths = [];
             let transformEvent = (exprInfo, source, attrName, art) => { //转换事件
                 let expr = exprInfo.expr;
@@ -945,7 +975,7 @@ module.exports = {
                     e += `,a:'${an}'`;
                 }
                 e += '}';
-                mxeInfo.push(e);
+                mxRefExprInfo.push(e);
             };
             attrs = attrs.replace(bindReg, (m, name, q, art, expr) => {
                 expr = expr.trim();
@@ -974,35 +1004,33 @@ module.exports = {
                 transformEvent(exprInfo, m, null, art);
                 findCount++;
                 return ' ';
-            }).replace(atRefReg, (m, c) => {
+            }).replace(atRefOrAnalysePathExprReg, (m, pfx, cmd) => {
                 let key = `'\x1e#'`;
-                if (c != '\x03') {
-                    let expr = analyseExpr(c, m, () => {
+                if (cmd != '\x03') {
+                    let prefix = () => {
+                        if (isLiteralValue(cmd)) {
+                            if (!literalValues[cmd]) {
+                                literalValues[cmd] = md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
+                            }
+                            return literalValues[cmd];
+                        }
                         return md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
-                    });
+                    }
+                    let expr = analyseExpr(cmd, m, prefix);
                     key = `'\x1e${expr.result}'`.replace(tailEmptyReg, '');
                 }
-                return `<%@${c},${key}%>`;
-            });
-            let addedMxe = false;
-            if (findCount > 0) {
-                let bindExpr = ``;
-                if (configs.magixUpdaterBindExpression) {
-                    // let mxe = md5(mxeCount, 'MXE', '\x1f_', true);
-                    // if (syncPaths.length) {
-                    //     mxe += '_' + syncPaths.join('_');
-                    // }
-                    let mxe = '\x1f';
-                    bindExpr = ` mxe="${mxe}"`;
-                    addedMxe = true;
+                if (pfx == '~') {
+                    hasIndeter = true;
+                    return `<%=${key}%>`;
                 }
-                attrs = bindExpr + ' mxc="[' + mxeInfo.join(',') + ']" ' + attrs;
+                return `<%@${cmd},${key}%>`;
+            });
+            if (findCount > 0) {
+                attrs = ' mxc="[' + mxRefExprInfo.join(',') + ']" ' + attrs;
             }
-            if (hasIndeter && !addedMxe) {
-                //let mxe = md5(mxeCount, 'MXE', '\x1f_', true);
-                let mxe = '\x1f';
-                attrs = ` mxe="${mxe}"` + attrs;
-                addedMxe = true;
+            if (hasIndeter) {
+                let mxo = '\x1f';
+                attrs = ` mxo="${mxo}"` + attrs;
             }
 
             if (hasMagixView) {
@@ -1012,17 +1040,10 @@ module.exports = {
                 }
             }
             let prefix = '';
-            if (addedMxe) {
-                // if (configs.magixUpdaterExpressionTipNode) {
-                //     prefix = '<span for="' + md5(mxeCount, 'MXE', '\x1f_', true) + '"></span>';
-                // }
-                //mxeCount++;
-            }
             return prefix + '<' + tag + attrs + '>';
         });
         fn = tmplCmd.recover(fn, cmdStore);
         fn = recoverString(stripNum(fn));
-        //console.log(JSON.stringify(fn));
         e.globalVars = Object.keys(globalVars);
         return fn;
     }

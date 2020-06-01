@@ -113,11 +113,12 @@ module.exports = e => {
                                 return m;
                             } else {
                                 let { isGlobal, key: k2 } = cssTransform.processVar(key);
+                                //console.log(lf,key,k2,m);
                                 if (isGlobal) {
                                     r = k2;
                                     cssChecker.storeStyleGlobalVars(lf, key);
                                 } else {
-                                    cssChecker.storeStyleGlobalVars(lf, key);
+                                    //cssChecker.storeStyleGlobalVars(lf, key);
                                     return m;
                                 }
                             }
@@ -384,6 +385,7 @@ module.exports = e => {
                 e.content.replace(styleInJSFileReg, (m, left, q, prefix, name, ext, key, right) => {
                     if ((key || prefix) ||
                         (left == '(' && right == ')')) {
+                        //console.log(name);
                         name = atpath.resolveName(name, e.moduleId);
                         let file = path.resolve(folder + sep + name + ext);
                         if (configs.scopedCssMap[file]) {

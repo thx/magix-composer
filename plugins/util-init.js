@@ -30,7 +30,7 @@ module.exports = () => {
             let str = crypto.createHash('sha512')
                 .update(configs.commonFolder, 'ascii')
                 .digest('hex');
-            configs.projectName = 'x' + str.substring(0, 2);
+            configs.projectName = 'x' + str.substring(0, 4);
         }
 
         let tmplExtNames = configs.tmplFileExtNames;
@@ -41,11 +41,11 @@ module.exports = () => {
         }
         configs.tmplFileExtNamesReg = new RegExp('\\.(?:' + names.join('|') + ')$');
 
-        configs.htmlFileReg = new RegExp('(?:compiled)?@[^\'"\\s@]+\\.(?:' + tmplExtNames.join('|') + ')');
+        configs.htmlFileReg = new RegExp('(?:compiled)?@(?:mx:)?[^\'"\\s@]+\\.(?:' + tmplExtNames.join('|') + ')');
         configs.htmlFileGlobalReg = new RegExp(configs.htmlFileReg, 'g');
 
         //模板处理，即处理view.html文件
-        configs.fileTmplReg = new RegExp('([\'"`])(compiled)?\\x12@([^\'"\\s@]+)\\.(' + tmplExtNames.join('|') + ')\\1', 'g');
+        configs.fileTmplReg = new RegExp('([\'"`])(compiled)?\\x12@(?:mx:)?([^\'"\\s@]+)\\.(' + tmplExtNames.join('|') + ')\\1', 'g');
 
         let rsPrefix = configs.revisableStringPrefix;
         if (!rsPrefix) {
@@ -95,7 +95,7 @@ module.exports = () => {
         }
         replacer.push('str', 'base64', 'style', 'html');
         configs.fileReplacerPrefixesReg = new RegExp(`(?:${replacer.join('|')})@[\\w\\.\\-\\/\\\\]+`);
-        configs.fileReplacerPrefixesHolderReg = new RegExp(`([\`"'])(${replacer.join('|')})\\x12@([\\w\\.\\-\\/\\\\]+)\\1`, 'g');
+        configs.fileReplacerPrefixesHolderReg = new RegExp(`([\`"'])(${replacer.join('|')})\\x12@(?:mx:)?([\\w\\.\\-\\/\\\\]+)\\1`, 'g');
 
         if (configs.loaderType == 'module' &&
             configs.moduleAddVirtualRootToId === null) {

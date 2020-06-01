@@ -170,7 +170,7 @@ let innerView = (result, info, gRoot, extInfo, actions, e) => {
     }
     return html;
 };
-let innerLink = (result) => {
+let innerLink = result => {
     let tag = 'a';
     let href = '', paramKey = 0;
     let attrs = result.attrs;
@@ -329,7 +329,7 @@ module.exports = {
                 pId: n.pId,
                 prefix: n.pfx,
                 group: n.group,
-                unary: !n.hasContent,
+                unary: n.unary,
                 //first: n.first,
                 //last: n.last,
                 //firstElement: n.firstElement,
@@ -344,6 +344,17 @@ module.exports = {
                 content,
                 nodesMap: map
             };
+            /*
+            shared设计
+            在处理自定义标签时，如
+            <mx-table>
+                <mx-table.col/>
+                <mx-table.rows/>
+            </mx-table>
+            先处理mx-table.col，在处理mx-table.col时，可以通过节点间关系找到父节点mx-table，此时可以在mx-table节点上挂一些共享数据，供其它节点使用
+
+            后处理mx-table节点
+             */
             return result;
         };
 
@@ -361,6 +372,7 @@ module.exports = {
             } else if (!skipTags[result.tag]) {
                 let content = result.content;
                 let fn = galleriesMap[result.tag] || configs.customTagOrAttrProcessor;
+                //console.log('xxx');
                 let customContent = fn(result, actions, extInfo, e);
                 if (!customContent && !isCustomAttr) {
                     skipTags[result.tag] = 1;
@@ -509,7 +521,7 @@ module.exports = {
             });
             if (update) {
                 let html = `<${tag} ${attrs}`;
-                let unary = selfCloseTags.hasOwnProperty(tag);
+                let unary = result.unary;
                 if (unary) {
                     html += `/`;
                 }
@@ -529,7 +541,7 @@ module.exports = {
             let attrs = result.attrs;
             attrs = attrs.replace(attrNameValueReg, encodeEntities);
             let html = `<${tag} ${attrs}`;
-            let unary = selfCloseTags.hasOwnProperty(tag);
+            let unary = result.unary;
             if (unary) {
                 html += `/`;
             }
@@ -557,7 +569,7 @@ module.exports = {
             });
             if (update) {
                 let html = `<${tag} ${attrs}`;
-                let unary = selfCloseTags.hasOwnProperty(tag);
+                let unary = result.unary;
                 if (unary) {
                     html += `/`;
                 }
@@ -580,7 +592,7 @@ module.exports = {
                     .replace(atReg, '\x03');
             });
             let html = `<${tag} ${attrs}`;
-            let unary = selfCloseTags.hasOwnProperty(tag);
+            let unary = result.unary;
             if (unary) {
                 html += `/`;
             }
@@ -625,7 +637,7 @@ module.exports = {
                 return `\x02="${view}"`;
             });
             let html = `<${tag} ${attrs}`;
-            let unary = selfCloseTags.hasOwnProperty(tag);
+            let unary = result.unary;
             if (unary) {
                 html += `/`;
             }

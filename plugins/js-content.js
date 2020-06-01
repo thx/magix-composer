@@ -21,16 +21,18 @@ let jsSnippet = require('./js-snippet');
 let jsReplacer = require('./js-replacer');
 let jsHeader = require('./js-header');
 let acorn = require('./js-acorn');
-let { galleryProcessed, revisableGReg } = require('./util-const');
+let { galleryProcessed,
+    revisableGReg,
+    atViewPrefix } = require('./util-const');
 let deps = require('./util-deps');
-let httpProtocolReg = /^['"`]https?:/i;
+//let httpProtocolReg = /^['"`]https?:/i;
 
 let lineBreakReg = /\r\n?|\n|\u2028|\u2029/;
 let mxTailReg = /\.m?mx$/;
 let stringReg = /^['"]/;
 //文件内容处理，主要是把各个处理模块串起来
-let moduleIdReg = /@(?:moduleId|id)/;
-let cssFileReg = /@(?:[\w\.\-\/\\]+?)\.(?:css|less|mx|style)/;
+let moduleIdReg = /@(mx:)?(?:moduleId|id)/;
+let cssFileReg = /@(?:mx:)?(?:[\w\.\-\/\\]+?)\.(?:css|less|mx|style)/;
 let cssFileGlobalReg = new RegExp(cssFileReg, 'g');
 let jsFileReg = /([a-z,&]+)?@([\w\.\-\/\\]+\.(?:[jt]s))/;
 let doubleAtReg = /@@/g;
@@ -189,6 +191,7 @@ let processContent = (from, to, content, inwatch) => {
                     add = true;
                     return md5(m, 'revisableString', configs.revisableStringPrefix);
                 });
+                raw = node.raw;
             }
             if (moduleIdReg.test(raw)) {
                 let m = raw.match(moduleIdReg);
@@ -265,31 +268,36 @@ let processContent = (from, to, content, inwatch) => {
                     add = true;
                 }
             } else {
-                //字符串以@开头，且包含/
-                let i = tl ? 0 : 1;
-                if (raw.charAt(i) == '@' && raw.indexOf('/') > 0) {
-                    //如果是2个@@开头则是转义
-                    if (raw.charAt(i + 1) == '@' && raw.lastIndexOf('@') == i + 1) {
-                        node.raw = raw.substring(0, i) + raw.substring(i + 1);
-                        add = true;
-                    } else if (raw.lastIndexOf('@') == i) { //只有一个，路径转换
-                        if (tl) {
-                            raw = '"' + raw + '"';
-                        }
-                        raw = atpath.resolvePath(raw, e.moduleId);
+                // //字符串以@开头，且包含/
+                if (!tl) {
+                    raw = raw.slice(1, -1);
+                }
+                let prefix = raw.substring(0, atViewPrefix.length);
+                let rest = raw.substring(atViewPrefix.length);
+                if (prefix == atViewPrefix) {
+                    if (rest.indexOf('./') > 0) {
+                        //console.log(rest);
+                        raw = atpath.resolvePath('"@' + rest + '"', e.moduleId);
                         if (tl) {
                             raw = raw.slice(1, -1);
                         }
+                        //console.log(raw);
                         node.raw = raw;
                         add = true;
+                    } else if (rest[0] == '~') {
+                        let newRest = configs.resolveVirtual(rest);
+                        if (newRest &&
+                            newRest != rest) {
+                            let dest = JSON.stringify(newRest);
+                            //console.log(dest, tl);
+                            if (tl) {
+                                dest = dest.slice(1, -1);
+                            }
+                            node.raw = dest;
+                            add = true;
+                        }
                     }
                 }
-            }
-            raw = node.raw.replace(doubleAtReg, '@');
-            //console.log(raw);
-            if (raw != node.raw) {
-                node.raw = raw;
-                add = true;
             }
             if (add) {
                 modifiers.push({
@@ -352,6 +360,7 @@ let processContent = (from, to, content, inwatch) => {
             let addDeps = configs.tmplAddViewsToDependencies;
             if (e.noRequires || !addDeps) mxViews = [];
             mxViews = mxViews.concat(e.tmplComponents || []);
+            //console.log(mxViews);
             let reqs = [],
                 vars = [];
             for (let v of mxViews) {
@@ -368,10 +377,7 @@ let processContent = (from, to, content, inwatch) => {
                 if (e.deps.indexOf(p) === -1 &&
                     e.deps.indexOf(full) === -1 &&
                     e.exRequires.indexOf(p) === -1 &&
-                    e.exRequires.indexOf(full) == -1 &&
-                    (e.loader != 'module' ||
-                        p[1] == '.' ||
-                        httpProtocolReg.test(p))) {
+                    e.exRequires.indexOf(full) == -1) {
                     let prefix = '',
                         type = '';
                     if (e.loader == 'module') {

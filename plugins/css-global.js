@@ -137,5 +137,8 @@ module.exports = {
             globalPromise = null;
             cssChecker.resetUnexist('/scoped.style');
         }
+    },
+    clear() {
+        globalPromise = null;
     }
 };

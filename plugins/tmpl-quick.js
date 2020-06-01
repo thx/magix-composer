@@ -72,7 +72,9 @@ let {
     tmplGroupKeyAttr,
     tmplGroupUseAttr,
     tmplVarTempKey,
-    tmplMxViewParamKey
+    quickSourceArt,
+    tmplMxViewParamKey,
+    tmplStaticKey
 } = require('./util-const');
 let utils = require('./util');
 let util = require('util');
@@ -369,6 +371,7 @@ let getIfContent = (cnt, e) => {
             value: m[1]
         };
     }
+    //console.log(m,fi);
     throw new Error('[MXC-Error(tmpl-quick)] bad if ' + cnt + ' at ' + e.shortHTMLFile);
 };
 let parser = (tmpl, e) => {
@@ -433,6 +436,7 @@ let parser = (tmpl, e) => {
                 } else if (a.name == quickIfAttr ||
                     a.name == quickElseIfAttr) {
                     let t = tmplCmd.recover(a.value, cmds);
+                    //console.log(t);
                     let fi = getIfContent(t, e);
                     token.ctrls.push({
                         type: a.name == quickIfAttr ? 'if' : 'elif',
@@ -661,7 +665,7 @@ let Directives = {
         end.push('\r\n}');
     },
     'forin'(ctrl, start, end, auto) {
-        let initial = ctrl.value.startsWith('$q_v_') ? '' : `{let ${ctrl.value}=${ctrl.list}[${ctrl.key}];`;
+        let initial = ctrl.value.startsWith('$q_v_') ? '' : `let ${ctrl.value}=${ctrl.list}[${ctrl.key}];`;
         if (configs.debug) {
             let open = auto ? '{{forin ' : quickForInAttr + '="{{'
             let art = `${open}${ctrl.art}}}${auto ? '' : '"'}`;
@@ -723,19 +727,20 @@ let preProcess = (src, e) => {
             let i = artExpr.extractArtInfo(ref);
             if (i) {
                 let { art, ctrls, line } = i;
+                let sourceArt = ` ${quickSourceArt}="${attrMap.escapeAttr(art)}"`;
                 if (ctrls[0] == 'each') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickEachAttr}="{{\x1e${line}${art.substring(5)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickEachAttr}="{{\x1e${line}${art.substring(5)}}}">`;
                 } else if (ctrls[0] == 'forin') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForInAttr}="{{\x1e${line}${art.substring(6)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForInAttr}="{{\x1e${line}${art.substring(6)}}}">`;
                 } else if (ctrls[0] == 'for') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForAttr}="{{\x1e${line}${art.substring(4)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForAttr}="{{\x1e${line}${art.substring(4)}}}">`;
                 } else if (ctrls[0] == 'if') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickIfAttr}="{{\x1e${line}${art.substring(3)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickIfAttr}="{{\x1e${line}${art.substring(3)}}}">`;
                 } else if (ctrls[0] == 'else') {
                     if (ctrls[1] == 'if') {
-                        return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseIfAttr}="{{\x1e${line}${art.substring(7)}}}">`;
+                        return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseIfAttr}="{{\x1e${line}${art.substring(7)}}}">`;
                     }
-                    return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseAttr}>`;
+                    return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseAttr}>`;
                 } else if (art.startsWith('/each') ||
                     art.startsWith('/forin') ||
                     art.startsWith('/for') ||
@@ -750,7 +755,9 @@ let preProcess = (src, e) => {
     });
 
     src = tmplCmd.store(src, cmds, artCommandReg);
+    //console.log(src);
     src = storeHTML(src, tags);
+    //console.log(src);
     while (tagHReg.test(src)) {
         tagHReg.lastIndex = 0;
         src = src.replace(tagHReg, m => {
@@ -799,6 +806,7 @@ let preProcess = (src, e) => {
                     return _;
                 }).replace(quickConditionReg, (_, k, $, c) => {
                     c = tmplCmd.recover(c, cmds);
+                    //console.log('qod',c);
                     let li = artExpr.extractArtInfo(c);
                     if (li) {
                         let expr = artExpr.extractIfExpr(li.art);
@@ -890,7 +898,7 @@ let process = (src, e) => {
         staticNodes = Object.create(null),
         staticObjects = Object.create(null),
         staticCounter = 0,
-        staticUniqueKey = md5(e.shortHTMLFile, tmplStaticVarsKey, '', true);
+        staticUniqueKey = md5(e.shortHTMLFile, tmplStaticVarsKey), rootCanHoisting = true;
     let genElement = (node, level, inStaticNode) => {
         if (node.type == 3) {
             let cnt = tmplCmd.recover(node.content, cmds);
@@ -951,9 +959,13 @@ let process = (src, e) => {
                         tmplCommandAnchorReg.lastIndex = 0;
                         if (tmplCommandAnchorReg.test(a.value)) {
                             tmplCommandAnchorReg.lastIndex = 0;
-                            newValue = `${configs.projectName}_${a.value}`;
+                            if (configs.projectName) {
+                                newValue = `${configs.projectName}_${a.value}`;
+                            } else {
+                                newValue = a.value;
+                            }
                         } else {
-                            newValue = `${configs.projectName}_${md5(e.from + ':' + a.value, tmplRadioOrCheckboxKey, '', true)}`;
+                            newValue = (configs.projectName ? configs.projectName + '_' : '') + md5(e.from + ':' + a.value, tmplRadioOrCheckboxKey, '', true);
                         }
                         a.value = newValue;
                     }
@@ -981,6 +993,7 @@ let process = (src, e) => {
                     let key = `$$_${a.name.replace(/[^a-zA-Z]/g, '_')}`;
                     //console.log('leave', a.value);
                     let attr = serAttrs(key, a.value, !bAttr);
+                    //console.log(attr,a);
                     hasCtrl = attr.hasCtrl;
                     if (attr.hasCmdOut || attr.hasVarOut || a.cond) {
                         hasCmdOut = true;
@@ -1033,7 +1046,7 @@ let process = (src, e) => {
                         }
                     }
                     //console.log(a.cond);
-                    //console.log(cond, attr.returned);
+                    //console.log(cond, attr.returned,a.value,outputBoolean);
                     if (configs.debug &&
                         attr.direct &&
                         (bAttr ||
@@ -1050,6 +1063,7 @@ let process = (src, e) => {
                             attr.returned = `(${assign}${tmplVarTempKey}!==true&&${tmplVarTempKey}!==false&&console.error('make sure attr:"${a.name}" returned only true or false value\\r\\nat line:'+$__line+'\\r\\nat file:${e.shortHTMLFile}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
                         }
                     }
+                    //console.log(attr.returned);
                     if (attr.direct) {
                         if (hasRestElement) {
                             ctrlAttrs.push({
@@ -1224,10 +1238,12 @@ let process = (src, e) => {
                 }
             }
             if (node.canHoisting) {
+                //console.log(node);
                 if (node.groupKeyNode) {
                     snippets.push(`\r\nif(!${key}){\r\n`);
                 } else {
                     key = staticNodes[node.staticValue];
+                    //let exists = key;
                     if (!key) {
                         key = `$quick_${staticUniqueKey}_${staticCounter++}_static_node`;
                         staticVars.push({
@@ -1394,7 +1410,23 @@ let process = (src, e) => {
     };
     vnodeInited[0] = 1;
     for (let t of tokens) {
-        genElement(t, 0);
+        if (!t.canHoisting) {
+            rootCanHoisting = false;
+        }
+    }
+    if (rootCanHoisting) {
+        for (let t of tokens) {
+            delete t.canHoisting;
+            let attrs = t.attrs;
+            for (let i = attrs.length; i--;) {
+                if (attrs[i].name == tmplStaticKey) {
+                    attrs.splice(i, 1);
+                }
+            }
+        }
+    }
+    for (let t of tokens) {
+        genElement(t, 0, rootCanHoisting);
     }
     let source = `let ${tmplVarTempKey},$vnode_0=[]`;
     let hasGroupFunction = false;
@@ -1420,7 +1452,20 @@ let process = (src, e) => {
             source += `=${v}`;
         }
     }
-    source = `${source};\r\n${snippets.join('')} \r\nreturn $_create($_viewId,0,$vnode_0);`;
+    let key = `$quick_root_${staticUniqueKey}_${staticCounter++}_static_node`;
+    if (rootCanHoisting) {
+        staticVars.push({
+            key
+        });
+        source = `if(!${key}){\r\n${source}`;
+    }
+    let rootNode = `${rootCanHoisting ? `${key}=` : ''}$_create($_viewId,0,$vnode_0);`;
+
+    source += `\r\n${snippets.join('')} \r\n`;
+    if (rootCanHoisting) {
+        source += rootNode + '\r\n}';
+    }
+    source += `\r\nreturn ${rootCanHoisting ? key : rootNode}`;
     source = combineSamePush(source, combinePushed);
     if (configs.debug) {
         source = `let $__art, $__line, $__ctrl; try { ${source} \r\n} catch (ex) { let msg = 'render view error:' + (ex.message || ex); msg += '\\r\\n\\tsrc art: ' + $__art + '\\r\\n\\tat line: ' + $__line; msg += '\\r\\n\\ttranslate to: ' + $__ctrl + '\\r\\n\\tat file:${e.shortHTMLFile}'; throw msg; } `;

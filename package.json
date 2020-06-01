@@ -1,6 +1,6 @@
 {
   "name": "magix-composer",
-  "version": "1.0.2",
+  "version": "1.0.6",
   "description": "compile html, style and javascript files into javascript",
   "main": "index.js",
   "repository": {

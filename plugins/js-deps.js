@@ -130,24 +130,25 @@ module.exports = {
         e.requires = deps;
         return Promise.resolve(e);
     },
-    getImport(reqInfo, e, ignoreAt) {
-        if (!reqInfo.mId.startsWith('.')) {
-            if (!ignoreAt && reqInfo.mId.startsWith('@')) {
-                let req = reqInfo.mId;
-                if (req.indexOf('/') > 0) {
-                    if (req.lastIndexOf('@') == 0) {
-                        reqInfo.mId = atpath.resolvePath(`"${req}"`, e.moduleId).slice(1, -1);
-                    }
-                }
-            }
-            let i = reqInfo.mId.indexOf('/');
-            if (i > -1) {
-                if (reqInfo.mId.substring(0, i) === e.pkgName) {
-                    let p = atpath.resolvePath('"@' + reqInfo.mId + '"', e.moduleId);
-                    reqInfo.mId = p.slice(1, -1);
-                }
-            }
-        }
+    getImport(reqInfo, e) {
+        // if (!reqInfo.mId.startsWith('.')) {
+        //     // if (!ignoreAt && reqInfo.mId.startsWith('@')) {
+        //     //     let req = reqInfo.mId;
+        //     //     if (req.indexOf('/') > 0) {
+        //     //         if (req.lastIndexOf('@') == 0) {
+        //     //             reqInfo.mId = atpath.resolvePath(`"${req}"`, e.moduleId).slice(1, -1);
+        //     //         }
+        //     //     }
+        //     // }
+        //     console.log(reqInfo);
+        //     let i = reqInfo.mId.indexOf('/');
+        //     if (i > -1) {
+        //         if (reqInfo.mId.substring(0, i) === e.pkgName) {
+        //             let p = atpath.resolvePath('"@' + reqInfo.mId + '"', e.moduleId);
+        //             reqInfo.mId = p.slice(1, -1);
+        //         }
+        //     }
+        // }
         if (e.loader == 'module') {
             let { mId } = reqInfo;
             let i = mId.indexOf('/'),
@@ -200,7 +201,7 @@ module.exports = {
         replacement += reqInfo.tail;
         return replacement;
     },
-    getReqReplacement(reqInfo, e, ignoreAt) {
+    getReqReplacement(reqInfo, e) {
         configs.resolveRequire(reqInfo, e);
         if (reqInfo.hasOwnProperty('replacement')) {
             return reqInfo.replacement;
@@ -232,6 +233,6 @@ module.exports = {
         if (reqInfo.dynamicVId) {
             return reqInfo.vId;
         }
-        return this.getImport(reqInfo, e, ignoreAt);
+        return this.getImport(reqInfo, e);
     }
 };

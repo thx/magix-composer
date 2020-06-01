@@ -24,6 +24,24 @@ let FileStylesComplex = Object.create(null);
 let FileStylesGlobalVarUsed = Object.create(null);
 
 module.exports = {
+    reset() {
+        //文件之间关系，主要通过js关联的html和css
+        FileRelationships = Object.create(null);
+        //记录js文件中，如@scoped.style:--css-var使用的选择器，变量等
+        FileHostUsed = Object.create(null);
+        //记录样式文件声明了哪些选择器，变量及@规则
+        FileStylesDeclared = Object.create(null);
+        //记录模板文件中使用了哪些选择器，css变量
+        FileTemplatesUsed = Object.create(null);
+        //追踪不存在的文件
+        FileUnexists = Object.create(null);
+        //记录样式文件中[ref="@path.css:selector"]使用的选择器或变量
+        FileStylesUsed = Object.create(null);
+        //记录复杂的样式
+        FileStylesComplex = Object.create(null);
+        //记录使用过的全局变量
+        FileStylesGlobalVarUsed = Object.create(null);
+    },
     resetByHost(from) {
         delete FileRelationships[from];
         delete FileHostUsed[from];

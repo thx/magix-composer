@@ -22,11 +22,12 @@ let extractModuleId = (file, ignoreVirtual) => {
         .replace(configs.jsOrCssFileExtNamesReg, '')
         .replace(sepReg, '/')
         .replace(startSlashReg, '');
+    //console.log(file, ignoreVirtual);
     if (!ignoreVirtual &&
-        configs.moduleAddVirtualRootToId) {
+        configs.moduleAddVirtualRootToId &&
+        !id.startsWith('~')) {
         id = `~${configs.projectName}/${id}`;
     }
-    id = configs.resolveModuleId(id);
     moduleIdCache[key] = id;
     return id;
 };

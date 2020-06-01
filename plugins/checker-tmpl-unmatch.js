@@ -9,7 +9,9 @@ let commentReg = /<!--[\s\S]*?-->/g;
 let tagRemovedReg = /<(style|script)[^>]*>[\s\S]*?<\/\1>/g;
 let tagReg = /<(\/)?([a-z0-9\-.:_\x11]+)/ig;
 let brReg = /(?:\r\n|\r|\n)/;
-let { microTmplCommand } = require('./util-const');
+let { microTmplCommand,
+    quickGroupTagName,
+    quickSourceArt } = require('./util-const');
 let hdreg = /\x1f\d+\s*\x1f/g;
 let brPlaceholder = (m, store) => {
     let count = m.split(brReg).length;
@@ -70,10 +72,16 @@ module.exports = (tmpl, e) => {
     htmlParser(tmpl, {
         start(tag, { unary, attrsMap, start, end }) {
             let a = tmpl.slice(start, end);
+            let prefix = 'open tag';
+            if (tag == quickGroupTagName) {
+                a = `"{{${attrsMap[quickSourceArt]}}}"`;
+                prefix = 'art ctrl';
+            }
             if (!unary) {
                 tags.push({
                     line: attrsMap['mc:line'],
                     match: a,
+                    prefix,
                     name: tag
                 });
             }
@@ -98,14 +106,8 @@ module.exports = (tmpl, e) => {
             }
             let last = tagsStack.pop();
             if (tag.name != last.name) {
-                let before = `open tag "${recover(last.match)}"`;
-                // if (last.name.startsWith('art\x11')) {
-                //     before = `art "${last.close ? '/' : ''}${last.name.substring(4)}"`;
-                // }
+                let before = `${last.prefix} ${recover(last.match)}`;
                 let current = recover(tag.match);
-                // if (tag.name.startsWith('art\x11')) {
-                //     current = `art "${tag.close ? '/' : ''}${tag.name.substring(4)}"`;
-                // }
                 throw new Error(`[MXC Error(checker-tmpl-unmatch)] "${current}" at line ${tag.line} doesn't match ${before} at line ${last.line}`);
             }
         } else {

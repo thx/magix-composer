@@ -17,15 +17,44 @@ let ignoreTags = {
     body: 1,
     '[mx-view]': 1
 };
-let ruleEndReg = /[;\r\n]/;
-let trimQ = /^['"]|['"]$/g;
+let ruleEndReg = /(?=[;\r\n])/;
+//let trimQ = /^['"]|['"]$/g;
 //以@开始的名称，如@font-face
 //charset不处理，压缩器会自动处理
 let fontfaceReg = /@font-face\s*\{([^\{\}]*)\}/g;
 //keyframes，如@-webkit-keyframes xx
 let keyframesReg = /(^|[\s\}])(@(?:-webkit-|-moz-|-o-|-ms-)?keyframes)\s+(['"])?([\w\-]+)\3/g;
-let cssContentReg = /\{([^\{\}]*)\}/g
+let cssContentReg = /\{([^\{\}]*)\}/g;
 
+let fixCssKeyName = (key, rules) => {
+    if (key.startsWith(';')) {
+        rules.push(';');
+        key = key.substring(1);
+    }
+    if (key.startsWith('\r')) {
+        rules.push('\r');
+        key = key.substring(1);
+    }
+    if (key.startsWith('\n')) {
+        rules.push('\n');
+        key = key.substring(1);
+    }
+    return key;
+};
+/*
+    对于@font-face @keyframes 和 animation-name
+    在哪个文件中定义就在哪个文件中使用，比如在 x.css中
+
+    @font-face{
+
+    }
+    定义的font-face，只能在 x.css 中通过
+    .css-selector{font-family:'ref font-face'}使用
+    在其它文件中通过.css-selector使用定义的这个 @font-face
+    不允许其它文件中直接使用这个 font-family
+
+    
+ */
 let cssAtRuleProcessor = (fileContent, cssNamesKey, file) => {
     let kfContents = Object.create(null);
     let ffContents = Object.create(null);
@@ -49,22 +78,28 @@ let cssAtRuleProcessor = (fileContent, cssNamesKey, file) => {
         let newRules = [];
         for (let rule of rules) {
             let parts = rule.split(':');
-            if (parts.length && parts[0].trim() === 'font-family') {
-                let fname = cssStringName.parseFont(parts[1])[0];
-                if (!ffContents[fname]) {
-                    ffContents[fname] = cssStringName.stringifyFont([genCssSelector(fname, cssNamesKey, null, 'md5CssSelectorResult@rule_ff')]);
-                    cssChecker.storeStyleDeclared(file, {
-                        atRules: {
-                            ['@font-face ' + fname]: 1
-                        }
-                    });
+            if (parts.length == 2) {
+                let [key, value] = parts;
+                key = fixCssKeyName(key, newRules);
+                if (key.trim() === 'font-family') {
+                    let fname = cssStringName.parseFont(value)[0];
+                    if (!ffContents[fname]) {
+                        ffContents[fname] = cssStringName.stringifyFont([genCssSelector(fname, cssNamesKey, null, 'md5CssSelectorResult@rule_ff')]);
+                        cssChecker.storeStyleDeclared(file, {
+                            atRules: {
+                                ['@font-face ' + fname]: 1
+                            }
+                        });
+                    }
+                    newRules.push('font-family:' + ffContents[fname]);
+                } else {
+                    newRules.push(`${key}:${value}`);
                 }
-                newRules.push('font-family:' + ffContents[fname]);
             } else {
                 newRules.push(rule);
             }
         }
-        return `@font-face{${newRules.join(';')}}`;
+        return `@font-face{${newRules.join('')}}`;
     });
     fileContent = fileContent.replace(cssContentReg, (_, content) => {
         let rules = content.split(ruleEndReg);
@@ -73,6 +108,7 @@ let cssAtRuleProcessor = (fileContent, cssNamesKey, file) => {
             let parts = rule.split(':');
             if (parts.length == 2) {
                 let [key, value] = parts;
+                key = fixCssKeyName(key, newContent);
                 key = key.trim();
                 value = value.trim();
                 if (key == 'font-family') {
@@ -146,13 +182,13 @@ let cssAtRuleProcessor = (fileContent, cssNamesKey, file) => {
                     }
                     newContent.push(key + ':' + value);
                 } else {
-                    newContent.push(rule);
+                    newContent.push(`${key}:${value}`);
                 }
-            } else if (rule.trim()) {
+            } else {
                 newContent.push(rule);
             }
         }
-        return '{' + newContent.join(';') + '}';
+        return '{' + newContent.join('') + '}';
     });
     //console.log(fileContent);
     return fileContent;
@@ -168,7 +204,9 @@ let genCssNamesKey = (file, ignorePrefix) => {
     }
     //css前缀是配置项中的前缀加上模块的md5信息
     if (!ignorePrefix) {
-        cssId = configs.projectName + cssId;
+        if (configs.projectName) {
+            cssId = configs.projectName + '-' + cssId;
+        }
     }
     return cssId;
 };
@@ -179,7 +217,8 @@ let genCssSelector = (selector, cssNameKey, reservedNames, key) => {
             mappedName = cssNameKey + '-' + mappedName;
         }
     } else {
-        mappedName = md5(selector + '\x00' + cssNameKey, key || 'md5CssSelectorResult', configs.projectName + '-', false, reservedNames);
+        let prefix = configs.projectName ? configs.projectName + '-' : '';
+        mappedName = md5(selector + '\x00' + cssNameKey, key || 'md5CssSelectorResult', prefix, false, reservedNames);
         if (configs.selectorDSEndReg.test(selector)) {
             mappedName += '-';
         }

@@ -32,7 +32,7 @@ let tagsAcceptUsersInput = htmlAttrs.getInputTags();
 
 module.exports = (tmpl, file) => {
     let g = 0;
-    let prefix = '';//md5(file, 'tmplFiles', configs.projectName, true) + ':';
+    let prefix = '';
     tmpl = tmpl.replace(tagReg, (match, tag, attrs, close, tKey) => {
         tKey = ` ${tmplTempStaticKey}="${g++}"`;
         tKey += ` ${tmplTempRealStaticKey}="${g++}"`;
