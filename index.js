@@ -13,6 +13,7 @@ let tmplNaked = require('./plugins/tmpl-naked');
 let slog = require('./plugins/util-log');
 let chalk = require('chalk');
 let util = require('util');
+let concurrentTask = 1;
 // let loading='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 let genMsg = (completed, total) => {
     let len = 40;
@@ -147,7 +148,7 @@ module.exports = {
                 let current = 0;
                 let run = () => {
                     errorOccured = false;
-                    let tks = tasks.slice(current, current += configs.concurrentTask);
+                    let tks = tasks.slice(current, current += concurrentTask);
                     if (tks.length) {
                         ps = [];
                         tks.forEach(it => {
@@ -208,7 +209,7 @@ module.exports = {
             let current = 0;
             let run = () => {
                 errorOccured = false;
-                let tks = tasks.slice(current, current += configs.concurrentTask);
+                let tks = tasks.slice(current, current += concurrentTask);
                 if (tks.length) {
                     ps = [];
                     tks.forEach(from => {
