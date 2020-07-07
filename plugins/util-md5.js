@@ -2,12 +2,13 @@
     md5转换，最初使用的md5，后期修改成sha512，但md5这个名称未换
  */
 let configs = require('./util-config');
-let vkeys = '_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-let vkeysWithNumber = vkeys + '0123456789#!@$%^&*(){}[]|\\,.?`~/;:-+';
-let variable = (count, withNumber) => { //压缩变量
+let vkeys = '_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+let vkeysWithChars = vkeys + '#!@$%^&*(){}[]|,.?`~/;:-+';
+let startWithNumReg = /^\d+/;
+let variable = (count, withChars) => { //压缩变量
     let result = '',
         temp,
-        keys = withNumber ? vkeysWithNumber : vkeys;
+        keys = withChars ? vkeysWithChars : vkeys;
     do {
         temp = count % keys.length;
         result = keys.charAt(temp) + result;
@@ -18,13 +19,13 @@ let variable = (count, withNumber) => { //压缩变量
 };
 let counter = Object.create(null);
 let cache = Object.create(null);
-let md5 = (text, configKey, prefix, withNumber, reserved) => {
+let md5 = (text, configKey, prefix, withChars, reserved) => {
     text += '';
     if (configKey == 'revisableString') {
         if (configs.revisableStringMap.hasOwnProperty(text)) {
             return configs.revisableStringMap[text];
         }
-        let spliter = text.includes(':') ? ':' : '#';
+        let spliter = '#';
         let temp = text.split(spliter);
         if (temp.length > 1) {
             configKey = temp[0];
@@ -33,26 +34,32 @@ let md5 = (text, configKey, prefix, withNumber, reserved) => {
             reserved = configs.revisableStringMapReserved;
         }
     }
-    if (!counter[configKey]) {
-        counter[configKey] = 0;
+    let cacheKey = [configKey, prefix, withChars].join('\x1f');
+    if (!counter[cacheKey]) {
+        counter[cacheKey] = 0;
     }
-    if (!cache[configKey]) {
-        cache[configKey] = Object.create(null);
+    if (!cache[cacheKey]) {
+        cache[cacheKey] = Object.create(null);
     }
-    let rstr = cache[configKey][text];
+    let rstr = cache[cacheKey][text];
     if (rstr) {
         return rstr;
     }
     do {
-        let c = counter[configKey];
-        rstr = variable(c, withNumber);
-        counter[configKey] = ++c;
+        let c = counter[cacheKey];
+        rstr = variable(c, withChars);
+        counter[cacheKey] = ++c;
         if (prefix) {
             rstr = prefix + rstr;
         }
-    } while (reserved && reserved[rstr]);
-    cache[configKey][text] = rstr;
+    } while ((reserved && reserved[rstr]) ||
+        (!withChars && startWithNumReg.test(rstr)));
+    cache[cacheKey][text] = rstr;
     return rstr;
 };
 md5.byNum = variable;
+md5.clear = () => {
+    counter = Object.create(null);
+    cache = Object.create(null);
+};
 module.exports = md5;

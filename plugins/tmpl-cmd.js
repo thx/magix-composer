@@ -5,7 +5,6 @@ let chalk = require('chalk');
 let configs = require('./util-config');
 let htmlminifier = require('html-minifier');
 let jsGeneric = require('./js-generic');
-let slog = require('./util-log');
 let { htmlminifier: cHTMLMinifier,
     tmplStoreIndexKey,
     microTmplCommand } = require('./util-const');
@@ -17,7 +16,7 @@ let tmplCommandAnchorReg = /\x07\d+\x07/g;
 let emptyCmdReg = /<%\s*%>/g;
 let bindReg2 = /(\s*)<%:([\s\S]+?)%>(\s*)/g;
 
-let cmdOutReg = /^<%([@=:])?([\s\S]*)%>$/;
+let cmdOutReg = /^<%([#=:])?([\s\S]*)%>$/;
 let artCtrlsReg = /^(?:<%'\x17?(\d+)\x11([^\x11]+)\x11\x17?'%>)?(<%[\s\S]+?%>)$/;
 let artCtrlsReg1 = /<%'\d+\x11([^\x11]+)\x11'%>(<%[\s\S]+?%>)/g;
 
@@ -34,8 +33,9 @@ module.exports = {
                 try {
                     fns = ',' + jsGeneric.parseObject(fns, '\x17', '\x18');
                 } catch (ex) {
-                    slog.ever(chalk.red('check:' + fns));
+                    console.log(chalk.red('check:' + fns));
                 }
+                //console.log(JSON.stringify(fns));
                 expr = expr.substring(0, leftBrace).trim();
                 if (expr[expr.length - 1] == '(') {
                     expr = expr.slice(0, -1);
@@ -47,11 +47,6 @@ module.exports = {
             } else {
                 let temp = expr.split('&');
                 if (temp.length > 1) {
-                    // if (temp.length != 2) {
-                    //     throw new Error('[MXC Error(tmpl-cmd)] unsupport ' + m);
-                    // }
-                    // let bind = temp[0].trim();
-                    // let rule = temp[1].trim();
                     let bind = temp.shift().trim();
                     let rule = temp.join('&');
                     if (rule.startsWith('(') && rule.endsWith(')')) {

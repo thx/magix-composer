@@ -29,7 +29,7 @@ https://thx.github.io/crox/
 
 循环语句
     //array and key value
-    {{each list as value index}}
+    {{each list as value index by desc step 3}}
         {{= index }}:{{= value }}
     {{/each}}
 
@@ -54,14 +54,11 @@ https://thx.github.io/crox/
 */
 let utils = require('./util');
 let configs = require('./util-config');
-let slog = require('./util-log');
 let chalk = require('chalk');
 let artExpr = require('./tmpl-art-ctrl');
-let slashReg = /\\|'/g;
+let htmlAttrs = require('./html-attrs');
 let ifForReg = /^\s*(if|for)\s*\(/;
 let longExpr = /[\.\[\]]/;
-let lineBreakReg = /\r\n?|\n|\u2028|\u2029/g;
-let openTag = '{{';
 let ctrls = {
     'if'(stack, ln) {
         stack.push({
@@ -150,13 +147,13 @@ let checkStack = (stack, key, code, e, lineNo) => {
                 args.push('at file');
             }
             args.push(chalk.grey(e.shortHTMLFile));
-            slog.ever.apply(slog, args);
+            console.log(...args);
             throw new Error(`[MXC Error(tmpl-art)] unexpected ${code}`);
         }
     } else if (stack.length) {
         for (let s, i = stack.length; i--;) {
             s = stack[i];
-            slog.ever(chalk.red(`[MXC Error(tmpl-art)] unclosed "${s.ctrl}" at line:${s.ln}`), ', at file', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.red(`[MXC Error(tmpl-art)] unclosed "${s.ctrl}" at line:${s.ln}`), ', at file', chalk.grey(e.shortHTMLFile));
         }
         throw new Error(`[MXC Error(tmpl-art)] unclosed art ctrls at ${e.shortHTMLFile}`);
     }
@@ -183,8 +180,7 @@ let syntax = (code, e, lineNo) => {
     //console.log(key, '@@', expr);
     let src = '';
     if (configs.debug) {
-        src = `<%'${lineNo}\x11${code.replace(slashReg, '\\$&')
-            .replace(lineBreakReg, '\\n')}\x11'%>`;
+        src = `<%'${lineNo}\x11${htmlAttrs.escapeSlashAndBreak(code)}\x11'%>`;
     }
     if (key == 'if') {
         expr = artExpr.extractIfExpr(expr);
@@ -202,7 +198,7 @@ let syntax = (code, e, lineNo) => {
             object = asExpr.iterator,
             init = false;
         if (asExpr.bad || asExpr.splitter != 'as') {
-            slog.ever(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad each {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad each {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
             throw new Error('[MXC Error(tmpl-art)] unsupport or bad each {{' + code + '}}');
         }
         if (asExpr.value) {
@@ -236,9 +232,9 @@ let syntax = (code, e, lineNo) => {
             }
         }
         if (asc) {
-            return `${src}<%for(let ${refExpr}${index}=0,${refObjCount}=${refObj}.length${lastCount};${index}<${refObjCount};${index}++){${firstAndLast}${value}%>`;
+            return `${src}<%for(let ${refExpr}${index}=0,${refObjCount}=${refObj}.length${lastCount};${index}<${refObjCount};${index}+=${asExpr.step}){${firstAndLast}${value}%>`;
         }
-        return `${src}<%for(let ${refExpr}${refObjCount}=${refObj}.length,${index}=${refObjCount}${lastCount};${index}--;){${firstAndLast}${value}%>`;
+        return `${src}<%for(let ${refExpr}${refObjCount}=${refObj}.length,${index}=${refObjCount}${lastCount};${index}>=0;${index}-=${asExpr.step}){${firstAndLast}${value}%>`;
     } else if (key == 'forin') {
         let asExpr = artExpr.extractAsExpr(expr),
             object = asExpr.iterator,
@@ -247,7 +243,7 @@ let syntax = (code, e, lineNo) => {
             init = true;
         }
         if (asExpr.bad || asExpr.splitter != 'as') {
-            slog.ever(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad forin {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad forin {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
             throw new Error('[MXC Error(tmpl-art)] unsupport or bad forin {{' + code + '}}');
         }
         let key1 = asExpr.index || utils.uId('$art_k', code);
@@ -308,7 +304,7 @@ let findBestCode = (str, e, line) => {
     }
     if (!find) {
         if (maybeAt == -1) {
-            slog.ever(chalk.red('[MXC Error(tmpl-art)] bad partial art: {{' + str.trim() + ' at line:' + line), 'at file', chalk.magenta(e.shortHTMLFile));
+            console.log(chalk.red('[MXC Error(tmpl-art)] bad partial art: {{' + str.trim() + ' at line:' + line), 'at file', chalk.magenta(e.shortHTMLFile));
             throw new Error('[MXC Error(tmpl-art)] bad partial art: {{' + str.trim() + ' at line:' + line + ' at file:' + e.shortHTMLFile);
         } else {
             left = str.substring(0, maybeAt - 2);
@@ -319,8 +315,9 @@ let findBestCode = (str, e, line) => {
 };
 let check = (tmpl, e) => {
     tmpl = artExpr.addLine(tmpl);
-    let parts = tmpl.split(openTag);
+    let parts = tmpl.split(artExpr.openTagReg);
     let stack = [];
+    //console.log(parts);
     for (let part of parts) {
         let lni = artExpr.extractArtInfo(part);
         if (lni) {
@@ -351,7 +348,7 @@ let check = (tmpl, e) => {
 let combine = (tmpl, e) => {
     let result = [];
     tmpl = artExpr.addLine(tmpl);
-    let parts = tmpl.split(openTag);
+    let parts = tmpl.split(artExpr.openTagReg);
     for (let part of parts) {
         let lni = artExpr.extractArtInfo(part);
         if (lni) {

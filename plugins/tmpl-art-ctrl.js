@@ -4,10 +4,13 @@ let eventLeftReg = /\(\s*\{/g;
 let eventRightReg = /\}\s*\)/g;
 let brReg = /(?:\r\n|\r|\n)/;
 let openTag = '{{';
+let openTagReg = /\{\{(?!\{)/;
 let mxEventHolderReg = /\x12([^\x12]*?)\x12/g;
 let lineNoReg = /^\x1e(\d+)([\s\S]+)/;
 let removeLineNoReg = /^\{\{\x1e\d+([\s\S]+)\}\}$/;
-let sortReg = /\s+by\s+([a-zA-Z0-9]+)\s*$/i;
+let sortReg = /\s+by\s+([a-zA-Z0-9]+)/i;
+let stepReg = /\s+step\s+([0-9\.]+)/i;
+let cmdWithLineReg = /<%'(\d+)[\s\S]+?'%>(?:<%([=#])?([\s\S]+?)%>|(\x1f))/g;
 let state = {
     VARIABLE: 1,
     STRING: 2,
@@ -119,12 +122,16 @@ let findEntiretyUntilSpace = expr => {
 let extractAsExpr = expr => {
     let iterator = '',
         splitter = '',
-        asc = true;
+        asc = true,
+        step = 1;
     expr = expr.trim();
     expr = expr.replace(sortReg, (m, sort) => {
         if (sort.toLowerCase() == 'desc') {
             asc = false;
         }
+        return '';
+    }).replace(stepReg, (m, s) => {
+        step = Number(s);
         return '';
     });
     let prefixes = findEntiretyUntilSpace(expr);
@@ -166,6 +173,7 @@ let extractAsExpr = expr => {
             asc,
             iterator,
             splitter,
+            step,
             value: vars.trim(),
             index: key.trim(),
             last: last.trim(),
@@ -177,6 +185,7 @@ let extractAsExpr = expr => {
         iterator,
         asc,
         splitter,
+        step,
         value: expr[0],
         index: expr[1],
         last: expr[2],
@@ -195,6 +204,8 @@ let extractForExpr = expr => {
     };
 };
 module.exports = {
+    openTag,
+    openTagReg,
     extractAsExpr,
     extractForExpr,
     extractIfExpr: jsGeneric.trimParentheses,
@@ -209,7 +220,7 @@ module.exports = {
         let lines = tmpl.split(brReg);
         let ls = [], lc = 0;
         for (let line of lines) {
-            ls.push(line.split(openTag).join(openTag + '\x1e' + (++lc)));
+            ls.push(line.split(openTagReg).join(openTag + '\x1e' + (++lc)));
         }
         tmpl = ls.join('\n');
         return tmpl;
@@ -240,5 +251,19 @@ module.exports = {
     },
     recoverEvent(tmpl) {
         return tmpl.replace(mxEventHolderReg, '({$1})');
+    },
+    extractCmdToArt(tmpl) {
+        let ln = -1;
+        let art = tmpl.replace(cmdWithLineReg, (m, line, o, c, d) => {
+            ln = line;
+            if (d == '\x1f') {
+                return '{{=$viewId}}';
+            }
+            return `{{${o || ''}${c}}}`;
+        });
+        return {
+            line: ln,
+            art
+        };
     }
 };

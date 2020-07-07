@@ -1,6 +1,7 @@
 let fs = require('fs');
 let path = require('path');
-let { galleryFileNames, galleryFileSuffixes } = require('./util-const');
+let { galleryFileNames,
+    galleryFileSuffixes } = require('./util-const');
 module.exports = (root, prefix) => {
     let cfg = {},
         configFile = '';

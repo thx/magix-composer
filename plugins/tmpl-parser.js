@@ -1,19 +1,22 @@
 let htmlParser = require('./html-parser');
 let { nativeTags, svgTags, mathTags, svgUpperTags } = require('./html-tags');
 let chalk = require('chalk');
-let slog = require('./util-log');
+let util = require('util');
 let configs = require('./util-config');
 let { htmlAttrParamFlag,
-    tmplTempStaticKey,
+    //tmplTempStaticKey,
     tmplTempRealStaticKey,
     tmplGroupTag,
     tmplGroupUseAttr,
     tmplGroupKeyAttr,
-    tmplMxViewParamKey } = require('./util-const');
+    tmplMxViewParamKey,
+    quickGroupTagName,
+    quickSourceArt } = require('./util-const');
 let tmplCommandAnchorReg = /\x07\d+\x07/;
 let upperCaseReg = /[A-Z]/;
-let valuableReg = /^(?:\x07\d+\x07)+\s*\?\?/;
-let booleanReg = /^(?:\x07\d+\x07)+\s*\?/;
+let valuableReg = /^\s*(?:\x07\d+\x07)+\s*\?\?\s*/;
+let booleanReg = /^\s*(?:\x07\d+\x07)+\s*\?\s*/;
+let isMxViewAttrReg = /^(?:\x1c\d+\x1c)?mx-view$/;
 // let updateLinkage = (token, children, pos) => {
 //     token.first = false;
 //     token.firstElement = false;
@@ -62,6 +65,7 @@ module.exports = (input, htmlFile, walk) => {
     let tokensMap = Object.create(null);
     let svgStack = [];
     let inSVG = false;
+    let tmplCustomAttrs = configs.tmplCustomAttrs;
     tokens.__map = tokensMap;
     htmlParser(input, {
         start(tag, {
@@ -76,7 +80,7 @@ module.exports = (input, htmlFile, walk) => {
             if (htmlFile &&
                 upperCaseReg.test(tag) &&
                 !(inSVG && svgUpperTags[tag])) {
-                slog.ever(chalk.red('[MXC Tip(tmpl-parser)] avoid use ' + tag), 'at', chalk.magenta(htmlFile), 'use', chalk.red(lowerTag), 'instead');
+                console.log(chalk.red('[MXC Tip(tmpl-parser)] avoid use ' + tag), 'at', chalk.magenta(htmlFile), 'use', chalk.red(lowerTag), 'instead');
             }
             if (lowerTag == 'svg') {
                 inSVG = true;
@@ -109,6 +113,7 @@ module.exports = (input, htmlFile, walk) => {
                 id: 't' + id++,
                 tag,
                 pfx,
+                unary,
                 group: i != -1 && i == ip,
                 attrsKV,
                 customTag: !nativeTags[lowerTag] && !svgTags[lowerTag] && !mathTags[lowerTag],
@@ -127,15 +132,29 @@ module.exports = (input, htmlFile, walk) => {
             for (let i = 0, len = attrs.length, a; i < len; i++) {
                 a = attrs[i];
                 temp = a.name;
-                if (configs.tmplCustomAttrs.includes(temp)) {
-                    token.hasCustAttr = true;
+                if (tmplCustomAttrs.length) {
+                    for (let custom of tmplCustomAttrs) {
+                        if (util.isString(custom)) {
+                            if (custom == temp) {
+                                token.hasCustAttr = true;
+                            }
+                        } else if (util.isRegExp(custom)) {
+                            if (custom.test(temp)) {
+                                token.hasCustAttr = true;
+                            }
+                        } else if (util.isFunction(custom)) {
+                            if (custom(temp, token)) {
+                                token.hasCustAttr = true;
+                            }
+                        }
+                    }
                 }
-                if (temp == 'mx-view') {
+                if (isMxViewAttrReg.test(temp)) {
                     token.hasMxView = true;
                     token.mxView = a.value;
-                } else if (temp == tmplTempStaticKey) {
+                } /*else if (temp == tmplTempStaticKey) {
                     token.mxsKey = a.value;
-                } else if (temp == tmplTempRealStaticKey) {
+                }*/ else if (temp == tmplTempRealStaticKey) {
                     token.mxsRealKey = a.value;
                 } else if (temp == tmplMxViewParamKey) {
                     token.mxvKey = a.value;
@@ -147,6 +166,8 @@ module.exports = (input, htmlFile, walk) => {
                 } else if (temp == tmplGroupKeyAttr) {
                     token.groupKeyNode = tag == tmplGroupTag;
                     token.groupKey = a.value;
+                } else if (temp == 'fn') {
+                    token.groupContextNode = tag == tmplGroupTag;
                 }
                 if (!a.unary) {
                     if (a.value.indexOf('@') > -1) {
@@ -155,8 +176,8 @@ module.exports = (input, htmlFile, walk) => {
                     if (a.value.startsWith('\x1f')) {
                         token.hasMxEvent = true;
                     }
-                    if (a.value.startsWith('\x07') &&
-                        (valuableReg.test(a.value) || booleanReg.test(a.value))) {
+                    if (valuableReg.test(a.value) ||
+                        booleanReg.test(a.value)) {
                         token.condAttr = true;
                     }
                     temp += '="' + a.value + '"';
@@ -188,7 +209,11 @@ module.exports = (input, htmlFile, walk) => {
                 if (!token) {
                     msg += `can not process unopened tag "</${tag}>"`;
                 } else {
-                    msg += `"</${tag}>" unmatched open tag "${token.tag}"`;
+                    let tip = 'open tag "' + token.tag + '"';
+                    if (token.tag == quickGroupTagName) {
+                        tip = `art ctrl "{{` + token.attrsKV[quickSourceArt] + '}}"';
+                    }
+                    msg += `"</${tag}>" unmatched ${tip}`;
                 }
                 throw new Error(msg);
             }
@@ -214,6 +239,7 @@ module.exports = (input, htmlFile, walk) => {
             let token = {
                 id: 't' + id++,
                 isText: true,
+                content: text,
                 start,
                 end
             };

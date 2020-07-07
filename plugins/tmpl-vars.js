@@ -7,7 +7,6 @@ let chalk = require('chalk');
 let tmplCmd = require('./tmpl-cmd');
 let configs = require('./util-config');
 let utils = require('./util');
-let slog = require('./util-log');
 let md5 = require('./util-md5');
 let jsGeneric = require('./js-generic');
 let {
@@ -15,18 +14,27 @@ let {
     revisableReg,
     tmplMxViewParamKey,
     tmplCondPrefix,
-    tmplVarTempKey
+    tmplVarTempKey,
+    tmplGroupKeyAttr,
+    tmplGroupTag,
+    tmplGroupRootAttr,
+    tmplGlobalVars,
+    quickGroupFnPrefix
 } = require('./util-const');
 let regexp = require('./util-rcache');
-let tmplCmdReg = /<%([@=!:&*]|\.{3})?([\s\S]*?)%>|$/g;
+let tmplStaticVarsKey = 'tmpl_static_vars_key';
+let tmplCmdReg = /<%([#=:&*~]|\.{3})?([\s\S]*?)%>|$/g;
 let tagReg = /<([^>\s\/\x07]+)([^>]*)>/g;
 let bindReg = /([^>\s\/=]+)\s*=\s*(["'])(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*\2/g;
 let bindReg2 = /\s*(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*/g;
 let textaraReg = /<textarea([^>]*)>([\s\S]*?)<\/textarea>/g;
-let mxViewAttrReg = /(?:\b|\s|^)mx-view\s*=\s*(['"])([^'"]+?)\1/g;
+let groupReg = new RegExp(`<${tmplGroupTag}([^>]*)>([\\s\\S]*?)<\\/${tmplGroupTag}>`, 'g');
+let groupKeyReg = new RegExp(`\\s${tmplGroupKeyAttr}="[^"]+"`);
+let groupContextReg = /\s+fn(?=\="([^"]+)"|\s|$)/;
+let mxViewAttrReg = /(?:\b|\s|^)mx-view\s*=\s*(['"])([\s\S]+?)\1/g;
 let checkboxReg = /(?:\b|\s|^)type\s*=\s*(['"])checkbox\1/;
 let indeterminateReg = /(?:\b|\s|^)indeterminate(?:\b|\s|=|$)/;
-let atRefReg = /<%@([\s\S]+?)%>/g;
+let atRefOrAnalysePathExprReg = /<%([#~])([\s\S]+?)%>/g;
 let vphUse = String.fromCharCode(0x7528); //用
 let vphDcd = String.fromCharCode(0x58f0); //声
 let vphCst = String.fromCharCode(0x56fa); //固
@@ -50,10 +58,15 @@ let cmap = {
 };
 let stripChar = str => str.replace(creg, m => cmap[m]);
 let stripNum = str => str.replace(hreg, '$1');
-let leftOuputReg = /\x18",/g;
-let rightOutputReg = /,\s*"/g;
+let fnVariableReg = /\x18",([\s\S]+?),\s*"\s*(:)?/g;
+let numberReg1 = /^[+-]?\.\d+(?:E[+-]?\d+)?$/i;
+let numberReg2 = /^[+-]?(?:0x|0b|0o)[0-9a-f]+$/i;
+let numberReg3 = /^[+-]?\d+\.?\d*(?:E[+-]?\d+)?$/i;
+let numberReg4 = /^[+-]?\d+n$/;
+let numberReg5 = /^[+-]?BigInt\(\s*(['"`])?\s*(?:0x|0b|0o)?[0-9a-f]+n?\s*\1\s*\)$/i;
+
 let efCache = Object.create(null);
-let extractFunctions = expr => { //获取绑定的其它附加信息，如 <%:user.name<change,input>({refresh:true,required:true})%>  =>  evts:change,input  expr user.name  fns  {refresh:true,required:true}
+let extractFunctions = (expr, refVariable) => { //获取绑定的其它附加信息，如 <%:user.name<change,input>({refresh:true,required:true})%>  =>  evts:change,input  expr user.name  fns  {refresh:true,required:true}
     let c = efCache[expr];
     if (c) {
         return c;
@@ -69,7 +82,19 @@ let extractFunctions = expr => { //获取绑定的其它附加信息，如 <%:us
     if (firstComma > -1) {
         fns = expr.substring(firstComma + 1).trim().slice(1, -1);
         expr = expr.substring(0, firstComma);
-        fns = fns.replace(leftOuputReg, '\'<%@').replace(rightOutputReg, '%>\'');
+        //console.log(JSON.stringify(fns));
+        fns = fns.replace(fnVariableReg, (m, v, colon) => {
+            if (colon) {
+                return `'<%=${v}%>'` + colon;
+            }
+            //console.log(m, v);
+            let key = `'\x1e#'`;
+            if (v != '\x03') {
+                key = refVariable(v, oExpr);
+            }
+            return `'<%#${v},${key}%>'`;
+        });
+        //console.log(JSON.stringify(fns));
     }
     return (efCache[oExpr] = {
         expr,
@@ -78,6 +103,8 @@ let extractFunctions = expr => { //获取绑定的其它附加信息，如 <%:us
 };
 
 let viewAttrReg = regexp.get(`\\s${regexp.escape(htmlAttrParamPrefix)}([\\w\\-]+)=(["'])([\\s\\S]*?)\\2`, 'g');
+let groupsReg = regexp.get(`[\\x03\\x06]\\.${regexp.escape(quickGroupFnPrefix)}`, 'g');
+//console.log(groupsReg);
 //前导符后跟合法的id
 let IdReg = /(?:[\x03\x06]\.|\x01\d+)[\x24\x30-\x39\x41-\x5a\x5f\x61-\x7a]+/g;
 let ExtractIds = v => {
@@ -262,6 +289,23 @@ let PeelPatternVariable = (fn, node) => {
     }
     return a.join('');
 };
+
+let isLiteralValue = v => {
+    if (v === 'true' ||
+        v === 'false' ||
+        v === 'null' ||
+        v === 'undefined') {
+        return true;
+    }
+    if (numberReg1.test(v) ||
+        numberReg2.test(v) ||
+        numberReg3.test(v) ||
+        numberReg4.test(v) ||
+        numberReg5.test(v)) {
+        return true;
+    }
+    return false;
+};
 /*
     \x00  `反撇
     \x01  模板中局部变量  用
@@ -291,11 +335,37 @@ module.exports = {
         //console.log(tmpl);
         let htmlKey = utils.uId('\x05', tmpl);
         let htmlHolderReg = new RegExp(htmlKey + '\\d+' + htmlKey, 'g');
+        let charReg = new RegExp('(?:;`' + htmlKey + '|' + htmlKey + '`;)', 'g');
+        let toSourceHTML = src => {
+            src = src.replace(charReg, htmlKey);
+            src = stripChar(src);
+            src = src.replace(htmlHolderReg, m => htmlStore[m]);
+            src = src.replace(tmplCmdReg, (match, operate, content) => {
+                if (operate) {
+                    return '<%' + operate + content.slice(1, -1) + '%>';
+                }
+                return match;
+            });
+            return src;
+        };
+        //tmpl=`\x1f<span>\x1f</span>`+tmpl;
+        tmpl = tmpl.replace(tmplCmdReg, (m, o, c) => {
+            if (o === '#' ||
+                o === '=') {
+                c = c.trim();
+                if (c == '$viewId') {
+                    return '\x1f';
+                }
+            }
+            return m;
+        });
+        //console.log(tmpl);
         tmpl.replace(tmplCmdReg, (match, operate, content, offset) => {
             let start = 2;
             if (operate) {
                 start += operate.length;
-                if (content.trim()) {
+                content = content.trim();
+                if (content) {
                     content = '[' + content + ']';
                 }
             }
@@ -305,7 +375,10 @@ module.exports = {
             index = offset + match.length - 2;
             fn.push(';`' + key + '`;', content || '');
         });
+        
+        //console.log(htmlStore);
         fn = fn.join(''); //移除<%%> 使用`变成标签模板分析
+        //console.log(fn);
         let ast;
         //console.log(fn);
         try {
@@ -324,7 +397,7 @@ module.exports = {
             if (msg.startsWith('[') && msg.endsWith(']')) {
                 msg = msg.substring(1, msg.length - 1);
             }
-            slog.ever(chalk.red('[MXC Error(tmpl-vars)] Parse template js code ast error: ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.red(msg));
+            console.log(chalk.red('[MXC Error(tmpl-vars)] Parse template js code ast error: ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.red(msg));
             throw ex;
         }
         /*
@@ -354,18 +427,21 @@ module.exports = {
         };
         let constVars = Object.create(null);
         let patternChecker = (node, instead) => {
-            let msg = '[MXC Error(tmpl-vars)] unpupport ' + node.type + ' near `' + fn.substring(node.start, node.end) + '`';
-            slog.ever(chalk.red(msg), 'at', chalk.grey(sourceFile), (instead ? chalk.magenta(`use ${instead} instead`) : ''));
+            let msg = '[MXC Error(tmpl-vars)] unpupport ' + node.type + ' near `' + toSourceHTML(fn.substring(node.start, node.end)) + '`';
+            console.log(chalk.red(msg), 'at', chalk.grey(sourceFile), (instead ? chalk.magenta(`use ${instead} instead`) : ''));
             throw new Error(msg);
         };
         let pattersObject = Object.create(null);
         let processExpressions = Object.create(null);
         let objectExpr = node => {
+            //debugger;
             let key = node.start + '~' + node.end;
             let key1 = fn.slice(node.start, node.end);
             let process = 0;
             if (node.type == 'ObjectPattern' ||
-                node.type == 'ArrayPattern') {
+                node.type == 'ArrayPattern' ||
+                node.type == 'ObjectExpression' ||
+                node.type == 'ArrayExpression') {
                 processExpressions[key1] = 1;
                 process = 1;
             } else {
@@ -424,7 +500,9 @@ module.exports = {
                 let callee = node.callee;
                 if (callee.name) { //只处理模板中 <%=fn(a,b)%> 这种，不处理<%=x.fn()%>，后者x对象上除了挂方法外，还有可能挂普通数据。对于方法我们不把它当做变量处理，因为给定同样的参数，方法需要返回同样的结果
                     vname = callee.name;
-                    constVars[vname] = 1;
+                    if (!vname.startsWith(quickGroupFnPrefix)) {
+                        constVars[vname] = 1;
+                    }
                 }
             },
             VariableDeclarator(node) {
@@ -434,12 +512,13 @@ module.exports = {
                         case 'ObjectExpression':
                         case 'FunctionExpression':
                         case 'ArrowFunctionExpression':
-                            slog.ever(chalk.red('[MXC Tip(tmpl-vars)] avoid declare ' + fn.substring(node.start, node.end)), 'at', chalk.grey(sourceFile));
+                            console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid declare ' + fn.substring(node.start, node.end)), 'at', chalk.grey(sourceFile));
                             break;
                     }
                 }
             }
         });
+        //debugger;
         for (let p in pattersObject) {
             let v = pattersObject[p];
             modifiers.push({
@@ -462,6 +541,7 @@ module.exports = {
             VariableDeclarator(node) {
                 if (node.id.type == 'ObjectPattern' ||
                     node.id.type == 'ArrayPattern') {
+                    //console.log('enter');
                     modifiers.push({
                         start: node.start,
                         end: node.end,
@@ -474,6 +554,7 @@ module.exports = {
                 if (expr.type == 'AssignmentExpression') {
                     if (expr.left.type == 'ObjectPattern' ||
                         expr.left.type == 'ArrayPattern') {
+                        console.log('enter');
                         modifiers.push({
                             start: node.start,
                             end: node.end,
@@ -558,7 +639,6 @@ module.exports = {
             }
         };
         let globalVars = Object.create(null);
-        let globalExists = configs.tmplGlobalVars;
         acorn.walk(ast, {
             Property(node) {
                 if (node.key.type == 'Literal') {
@@ -578,7 +658,7 @@ module.exports = {
                 let tname = node.name;
                 let r = queryVarsByPos(node.start);
                 let isGlobal = 0;
-                if (!globalExists[tname] && (
+                if (!tmplGlobalVars[tname] && (
                     !r[tname])) {
                     isGlobal = 1;
                 }
@@ -605,7 +685,7 @@ module.exports = {
                     let r = queryVarsByPos(node.start);
                     if (!r[lname]) {
                         //模板中使用如<%list=20%>这种，虽然可以，但是不建议使用，因为在模板中可以修改js中的数据，这是非常不推荐的
-                        slog.ever(chalk.red('[MXC Tip(tmpl-vars)] undeclare variable:' + lname), 'at', chalk.grey(sourceFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-vars)] undeclare variable:' + lname), 'at', chalk.grey(sourceFile));
                         globalVars[lname] = 1;
                     } else {
                         let left = node.left;
@@ -624,7 +704,7 @@ module.exports = {
                     let r = queryVarsByPos(node.start);
                     if (!r[start.name]) {
                         globalVars[start.name] = 1;
-                        slog.ever(chalk.red('[MXC Tip(tmpl-vars)] avoid writeback: ' + fn.slice(node.start, node.end)), 'at', chalk.grey(sourceFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid writeback: ' + fn.slice(node.start, node.end)), 'at', chalk.grey(sourceFile));
                     }
                 }
             },
@@ -632,7 +712,7 @@ module.exports = {
                 let tname = node.id.name;
                 if (globalVars[tname] || globalVars[tname]) {
                     let msg = '[MXC Error(tmpl-vars)] avoid redeclare variable:' + tname;
-                    slog.ever(chalk.red(msg), 'at', chalk.grey(sourceFile));
+                    console.log(chalk.red(msg), 'at', chalk.grey(sourceFile));
                     throw new Error(msg);
                 }
                 let r = queryRangeByPos(node.start);
@@ -736,16 +816,7 @@ module.exports = {
                 }
             }
         });
-        let charReg = new RegExp('(?:;`' + htmlKey + '|' + htmlKey + '`;)', 'g');
-        fn = fn.replace(charReg, htmlKey);
-        fn = stripChar(fn);
-        fn = fn.replace(htmlHolderReg, m => htmlStore[m]);
-        fn = fn.replace(tmplCmdReg, (match, operate, content) => {
-            if (operate) {
-                return '<%' + operate + content.slice(1, -1) + '%>';
-            }
-            return match;
-        }); //把合法的js代码转换成原来的模板代码
+        fn = toSourceHTML(fn); //把合法的js代码转换成原来的模板代码
         let cmdStore = Object.create(null);
         let getParentRefKey = (key, pos) => {
             let list = globalTracker[key];
@@ -776,7 +847,7 @@ module.exports = {
             if (!srcExpr) {
                 srcExpr = expr;
             }
-            //slog.ever('expr', expr);
+            //console.log('expr', expr);
             let ps = jsGeneric.splitExpr(expr);//表达式拆分，如user[name][key[value]]=>["user","[name]","[key[value]"]
             /*
                 1. <%:user.name%>
@@ -791,7 +862,7 @@ module.exports = {
             if (!info) {
                 if (!prefix) {
                     let tipExpr = toOriginalExpr(srcExpr.trim());
-                    slog.ever(chalk.red('[MXC Error(tmpl-vars)] can not resolve bind expression: ' + tipExpr), 'at', chalk.grey(sourceFile), 'check variable reference or global variable declaration,read more: https://github.com/thx/magix/issues/37');
+                    console.log(chalk.red('[MXC Error(tmpl-vars)] can not resolve bind expression: ' + tipExpr), 'at', chalk.grey(sourceFile), 'check variable reference or global variable declaration,read more: https://github.com/thx/magix/issues/37');
                     return ['<%throw new Error("can not resolve bind expression")'];
                 }
                 return [prefix()];
@@ -801,7 +872,7 @@ module.exports = {
             }
             return ps; //.join('.');
         };
-        let analyseExpr = (expr, source, prefix) => {
+        let analyseExpr = (expr, source, prefix, keepSource) => {
             let result = find(expr, source, prefix); //获取表达式信息
             let vars = [];
             if (prefix) {
@@ -810,7 +881,8 @@ module.exports = {
                 let takeParts = () => {
                     if (temp.length) {
                         let part = temp.join('.');
-                        if (!configs.debug) {
+                        if (!configs.debug &&
+                            !keepSource) {
                             part = md5(part, 'compressRefExpr', '', true);
                         }
                         rebuild.push(part);
@@ -867,14 +939,21 @@ module.exports = {
         let extractMxViewRootKeys = attrs => {
             let keys = [];
             let takeKeys = (m, c, v) => {
-                if (c == '@') {
-                    v = v.replace(refKeyReg, '');
-                    let ks = ExtractIds(v);
-                    if (ks.length) {
-                        for (let k of ks) {
-                            m = findRoot(k);
-                            if (m && keys.indexOf(m) === -1) {
-                                keys.push(m);
+                if (c == '#') {
+                    v = v.replace(refKeyReg, '').trim();
+                    if (v.startsWith('\x03.' + quickGroupFnPrefix)) {
+                        if (!keys.includes(v)) {
+                            keys.push(v.substring(2));
+                        }
+                    } else {
+                        let ks = ExtractIds(v);
+                        if (ks.length) {
+                            for (let k of ks) {
+                                m = findRoot(k);
+                                if (m &&
+                                    !keys.includes(m)) {
+                                    keys.push(m);
+                                }
                             }
                         }
                     }
@@ -883,6 +962,7 @@ module.exports = {
             attrs.replace(artCtrlsReg, '$2')
                 .replace(mxViewAttrReg, (m, q, value) => {
                     q = value.indexOf('?');
+                    //console.log(value,q);
                     if (q > -1) {
                         value = value.substring(q + 1);
                         value.replace(tmplCmdReg, takeKeys);
@@ -914,12 +994,26 @@ module.exports = {
         });
         //let mxeCount = 0;
         let tempVarsPrefixKey = 0;
+        let literalValues = Object.create(null);
+        let processRefVariable = (v, src, isAnalysePath) => {
+            let prefix = () => {
+                if (isLiteralValue(v)) {
+                    if (!literalValues[v]) {
+                        literalValues[v] = md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
+                    }
+                    return literalValues[v];
+                }
+                return md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
+            }
+            let expr = analyseExpr(v, src, prefix, isAnalysePath);
+            return `'\x1e${expr.result}'`.replace(tailEmptyReg, '');
+        };
         fn = fn.replace(tagReg, (_, tag, attrs) => {
             let hasMagixView = mxViewAttrReg.test(attrs); //是否有mx-view属性
             let hasIndeter = checkboxReg.test(attrs) && indeterminateReg.test(attrs);
             attrs = tmplCmd.recover(attrs, cmdStore, recoverString); //还原
             let findCount = 0;
-            let mxeInfo = [];
+            let mxRefExprInfo = [];
             let syncPaths = [];
             let transformEvent = (exprInfo, source, attrName, art) => { //转换事件
                 let expr = exprInfo.expr;
@@ -929,9 +1023,9 @@ module.exports = {
                         syncPaths.push(v);
                     }
                 }
-                let e = `${art}{p:'${expr.result}'`;
+                let e = `${art}['${expr.result}'`;
                 if (exprInfo.fns) {
-                    e += `,f:` + exprInfo.fns;
+                    e += `,` + exprInfo.fns;
                 }
                 /*
                     对于view的绑定，如
@@ -942,88 +1036,123 @@ module.exports = {
                 if (attrName && attrName.startsWith(htmlAttrParamPrefix)) {
                     let an = attrName.substring(htmlAttrParamPrefix.length);
                     an = utils.camelize(an);
-                    e += `,a:'${an}'`;
+                    e += `,'${an}'`;
                 }
-                e += '}';
-                mxeInfo.push(e);
+                e += ']';
+                mxRefExprInfo.push(e);
             };
             attrs = attrs.replace(bindReg, (m, name, q, art, expr) => {
                 expr = expr.trim();
-                let exprInfo = extractFunctions(expr);
+                let exprInfo = extractFunctions(expr, processRefVariable);
+                //console.log(exprInfo);
                 art = art || '';
                 transformEvent(exprInfo, m, name, art);
                 findCount++;
                 let replacement = '<%=';
                 if (hasMagixView) {
                     if (name.startsWith(htmlAttrParamPrefix)) {
-                        replacement = '<%@';
+                        replacement = '<%#';
                     } else if (name.startsWith(tmplCondPrefix)) {
                         let key = name.replace(tmplCondPrefix, '');
                         let cd = e.tmplConditionAttrs[key];
                         if (cd && cd.attrName.startsWith(htmlAttrParamPrefix)) {
-                            replacement = '<%@';
+                            replacement = '<%#';
                         }
                     }
                 }
-                m = name + '=' + q + art + replacement + exprInfo.expr + '%>' + q;
+                m = name + '=' + q + art + replacement + exprInfo.expr + '%>' + q;// + ' mxp="<%~' + exprInfo.expr + '%>"';
+                hasIndeter = true;
                 return m;
             }).replace(bindReg2, (m, art, expr) => {
+                hasIndeter = true;
                 expr = expr.trim();
-                let exprInfo = extractFunctions(expr);
+                let exprInfo = extractFunctions(expr, processRefVariable);
                 art = art || '';
                 transformEvent(exprInfo, m, null, art);
                 findCount++;
                 return ' ';
-            }).replace(atRefReg, (m, c) => {
-                let key = `'\x1e#'`;
-                if (c != '\x03') {
-                    let expr = analyseExpr(c, m, () => {
-                        return md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
-                    });
-                    key = `'\x1e${expr.result}'`.replace(tailEmptyReg, '');
-                }
-                return `<%@${c},${key}%>`;
             });
-            let addedMxe = false;
-            if (findCount > 0) {
-                let bindExpr = ``;
-                if (configs.magixUpdaterBindExpression) {
-                    // let mxe = md5(mxeCount, 'MXE', '\x1f_', true);
-                    // if (syncPaths.length) {
-                    //     mxe += '_' + syncPaths.join('_');
-                    // }
-                    let mxe = '\x1f';
-                    bindExpr = ` mxe="${mxe}"`;
-                    addedMxe = true;
+            attrs = attrs.replace(atRefOrAnalysePathExprReg, (m, pfx, cmd) => {
+                let key = `'\x1e#'`;
+                let isAnalysePath = pfx === '~';
+                if (cmd != '\x03') {
+                    key = processRefVariable(cmd, m, isAnalysePath);
                 }
-                attrs = bindExpr + ' mxc="[' + mxeInfo.join(',') + ']" ' + attrs;
+                if (isAnalysePath) {
+                    hasIndeter = true;
+                    return `<%=${key.replace('\x1e', '')}%>`;
+                }
+                return `<%#${cmd},${key}%>`;
+            });
+            if (findCount > 0) {
+                attrs = ' mx-ctrl="[' + mxRefExprInfo.join(',') + ']" ' + attrs;
             }
-            if (hasIndeter && !addedMxe) {
-                //let mxe = md5(mxeCount, 'MXE', '\x1f_', true);
-                let mxe = '\x1f';
-                attrs = ` mxe="${mxe}"` + attrs;
-                addedMxe = true;
+            if (hasIndeter) {
+                let mxo = '\x1f';
+                attrs = ` mx-owner="${mxo}"` + attrs;
             }
 
             if (hasMagixView) {
                 let keys = extractMxViewRootKeys(attrs);
+                //console.log('xxxxx', keys);
                 if (keys.length) {
                     attrs = ` ${tmplMxViewParamKey}="${keys}"${attrs}`;
                 }
             }
             let prefix = '';
-            if (addedMxe) {
-                // if (configs.magixUpdaterExpressionTipNode) {
-                //     prefix = '<span for="' + md5(mxeCount, 'MXE', '\x1f_', true) + '"></span>';
-                // }
-                //mxeCount++;
-            }
             return prefix + '<' + tag + attrs + '>';
         });
-        fn = tmplCmd.recover(fn, cmdStore);
-        fn = recoverString(stripNum(fn));
+        fn = tmplCmd.store(fn, cmdStore);
+        //console.log(groupReg);
+        //let groupAllKeys = [];
+        fn = fn.replace(groupReg, (_, attrs, content) => {
+            if (groupKeyReg.test(attrs) &&
+                groupContextReg.test(attrs)) {
+                let ctxKey = '', keys = [];
+                attrs.replace(groupContextReg, (m, c) => ctxKey = c);
+                if (ctxKey) {
+                    delete globalVars[ctxKey];
+                }
+                content = tmplCmd.recover(content, cmdStore);
+                content.replace(tmplCmdReg, (m, o, c) => {
+                    if (c) {
+                        let ks = ExtractIds(c);
+                        if (ks.length) {
+                            for (let k of ks) {
+                                m = findRoot(k);
+                                //console.log(k, m);
+                                if (m &&
+                                    m != ctxKey &&
+                                    m != '$viewId' &&
+                                    !keys.includes(m)) {
+                                    keys.push(m);
+                                    // if (!groupAllKeys.includes(m)) {
+                                    //     groupAllKeys.push(m);
+                                    // }
+                                }
+                            }
+                        }
+                    }
+                });
+                if (keys.length) {
+                    return `<${tmplGroupTag} ${tmplGroupRootAttr}="${keys.join(',')}"${attrs}>${content}</${tmplGroupTag}>`
+                }
+                return _;
+            }
+            return _;
+        });
         //console.log(JSON.stringify(fn));
+        //console.log(cmdStore);
+
+        let shortHTMLUId = md5(e.shortHTMLFile, tmplStaticVarsKey);
+        fn = tmplCmd.recover(fn, cmdStore, cmd => {
+            return cmd.replace(groupsReg, `$&${shortHTMLUId}_`);
+        });
+        fn = recoverString(stripNum(fn));
         e.globalVars = Object.keys(globalVars);
+        e.shortHTMLUId = shortHTMLUId;
+        //e.globalGroupKeys = groupAllKeys;
+        //console.log(fn);
         return fn;
     }
 };

@@ -7,7 +7,7 @@
 let path = require('path');
 let configs = require('./util-config');
 let cssChecker = require('./checker-css');
-let cssFileRead = require('./css-read');
+let cssRead = require('./css-read');
 let cssComment = require('./css-comment');
 let {
     cssRefReg
@@ -36,11 +36,12 @@ let processScope = ctx => {
                 scopedDeclaredInFiles
             });
         } else {
+            //debugger;
             let add = i => {
                 let currentFile = i.file;
                 let cssNamesKey = cssTransform.genCssNamesKey(configs.debug ? currentFile : 'scoped.style');
 
-                let shortFile = currentFile.replace(configs.moduleIdRemovedPath, '').substring(1);
+                let shortFile = currentFile.replace(configs.commonFolder, '').substring(1);
 
                 if (i.exists && i.content) {
                     let c = cssComment.clean(i.content);
@@ -94,7 +95,7 @@ let processScope = ctx => {
             let ps = [];
             for (let i = 0, ext; i < list.length; i++) {
                 ext = path.extname(list[i]);
-                ps.push(cssFileRead(list[i], ctx.context, '', ext));
+                ps.push(cssRead(list[i], ctx.context, '', ext));
             }
             Promise.all(ps).then(rs => {
                 for (let i = 0; i < rs.length; i++) {
@@ -137,5 +138,8 @@ module.exports = {
             globalPromise = null;
             cssChecker.resetUnexist('/scoped.style');
         }
+    },
+    clear() {
+        globalPromise = null;
     }
 };

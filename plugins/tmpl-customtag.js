@@ -13,7 +13,6 @@ let url = require('url');
 let qs = require('querystring');
 let configs = require('./util-config');
 let tmplCmd = require('./tmpl-cmd');
-let slog = require('./util-log');
 let util = require('util');
 let chalk = require('chalk');
 let utils = require('./util');
@@ -32,15 +31,19 @@ let {
     tmplCondPrefix,
     tmplGroupTag,
     tmplGroupKeyAttr,
-    tmplGroupUseAttr
+    tmplGroupUseAttr,
+    styleInHTMLReg,
+    atViewPrefix
 } = require('./util-const');
 let deps = require('./util-deps');
 let sep = path.sep;
 let { selfCloseTags } = require('./html-tags');
+let htmlAttrs = require('./html-attrs');
 let uncheckTags = {
     'mx-vframe': 1,
     'mx-link': 1,
-    'mx-group': 1
+    'mx-group': 1,
+    'mx-html': 1
 };
 let skipTags = {
     [quickGroupTagName]: 1,
@@ -53,16 +56,24 @@ let attrAtStartContentHolderReg = /\x03/g;
 let mxViewAttrHolderReg = /\x02/g;
 let atReg = /@/g;
 let mxViewAttrReg = /\bmx-view\s*=\s*(['"])([^'"]*?)\1/;
-let valuableAttrReg = /\x07\d+\x07\s*\?\?/;
-let booleanAttrReg = /\x07\d+\x07\s*\?/;
+let valuableAttrReg = /\x07\d+\x07\s*\?\?\s*/;
+let booleanAttrReg = /\x07\d+\x07\s*\?\s*/;
 let wholeCmdReg = /^(?:\x07\d+\x07)+$/;
 let hasCmdReg = /\x07\d+\x07/;
 let httpProtocolReg = /^(?:https?:)?\/\//i;
+let classReg = /\bclass\s*=\s*"([^"]+)"/g;
 let entities = {
     '>': '&gt;',
     '<': '&lt;'
 };
-let encodeEntities = m => m.replace(/[<>]/g, _ => entities[_]);
+let decodeEntities = {
+    '&gt;': '>',
+    '&lt;': '<'
+};
+let encodeRegexp = /[<>]/g;
+let decodeRegexp = /&(lt|gt);/g;
+
+let encodeEntities = m => m.replace(encodeRegexp, _ => entities[_]);
 let toParamKey = key => {
     key = htmlAttrParamPrefix + key.substring(1);
     return key;
@@ -74,15 +85,39 @@ let addAtIfNeed = tmpl => {
         if (c == '@' || c == '/' || c == '\x03') {
             return m;
         }
-        return '@' + m;
+        return atViewPrefix + m;
     });
 };
-let innerView = (result, info, gRoot, extInfo, actions, e) => {
-    if (info) {
-        result.mxView = path.relative(path.dirname(e.from), configs.moduleIdRemovedPath + path.sep + gRoot + info.path);
+let transformPathToModuleId = (base, fn) => {
+    //console.log('bf', base, fn);
+    if (fn.startsWith('.') &&
+        fn.includes('/')) {
+        let f = path.join(base, fn);
+        return utils.extractModuleId(f);
     }
-    if (util.isObject(info) && util.isFunction(info.processor)) {
+    return fn;
+};
+let innerView = (result, info, gRoot, extInfo, actions, e) => {
+    //console.log(info);
+    if (info) {
+        let part = gRoot + info.path;
+        let prefix = path.isAbsolute(part) ? '' : configs.commonFolder + sep;
+        result.mxView = path.relative(path.dirname(e.from), prefix + part);
+    }
+    //console.log('xx', result.mxView);
+    if (util.isObject(info) &&
+        util.isFunction(info.processor)) {
         let html = info.processor(result, actions, extInfo) || '';
+        let refProcessor = (m, fn, tail, selector) => {
+            if (info.base) {
+                //console.log(info.base, fn);
+                let fId = transformPathToModuleId(info.base, fn);
+                return `@:${fId}${tail}:${selector}`;
+            }
+            return m;
+        };
+        let classProcessor = m => m.replace(styleInHTMLReg, refProcessor);
+        html = html.replace(classReg, classProcessor);
         return html;
     }
     let tag = 'div';
@@ -168,12 +203,14 @@ let innerView = (result, info, gRoot, extInfo, actions, e) => {
         html += `>${result.content}`;
         html += `</${tag}${result.endAttrs}>`;
     }
+    //console.log(html);
     return html;
 };
-let innerLink = (result) => {
+let innerLink = result => {
     let tag = 'a';
     let href = '', paramKey = 0;
-    let attrs = result.attrs;
+    let attrs = result.attrs,
+        needAddRel = true;
     attrs = attrs.replace(attrNameValueReg, (m, prefix, key, q, value) => {
         if (key == 'to') {
             href = value;
@@ -182,6 +219,9 @@ let innerLink = (result) => {
         if (key == 'tag') {
             tag = value;
             return '';
+        }
+        if (key == 'rel') {
+            needAddRel = false;
         }
         return m;
     });
@@ -197,6 +237,10 @@ let innerLink = (result) => {
         }
         return prefix + key + '=' + q + value + q;
     });
+    //console.log(attrs, needAddRel);
+    if (needAddRel) {
+        attrs += ' rel="noopener noreferrer"';
+    }
     let html = `<${tag} href="${href}" ${attrs}`;
     let unary = selfCloseTags.hasOwnProperty(tag);
     if (unary) {
@@ -209,7 +253,7 @@ let innerLink = (result) => {
 };
 let innerGroup = (result) => {
     let tag = tmplGroupTag;
-    let newAttrs = '';
+    let newAttrs = ``;
     result.attrs.replace(attrNameValueReg, (m, prefix, key, q, value) => {
         if (key == 'use') {
             //使用场景下，清空内容
@@ -218,7 +262,7 @@ let innerGroup = (result) => {
         } else if (key == 'name') {
             newAttrs += ` ${tmplGroupKeyAttr}="${value}"`;
         } else {
-            newAttrs += ` ${key}${q ? `=${value}` : ''}`;
+            newAttrs += ` ${key}${q ? `="${value}"` : ''}`;
         }
     });
     return `<${tag} ${newAttrs}>${result.content}</${tag}${result.endAttrs}>`;
@@ -247,6 +291,9 @@ module.exports = {
             },
             readCmd(cmd) {
                 return tmplCmd.extractCmdContent(cmd, cmdCache);
+            },
+            recoverHTML(cmd) {
+                return cmd.replace(decodeRegexp, _ => decodeEntities[_]);
             },
             buildCmd(line, operate, art, content) {
                 return tmplCmd.buildCmd(line, operate, art, content);
@@ -329,7 +376,7 @@ module.exports = {
                 pId: n.pId,
                 prefix: n.pfx,
                 group: n.group,
-                unary: !n.hasContent,
+                unary: n.unary,
                 //first: n.first,
                 //last: n.last,
                 //firstElement: n.firstElement,
@@ -344,6 +391,17 @@ module.exports = {
                 content,
                 nodesMap: map
             };
+            /*
+            shared设计
+            在处理自定义标签时，如
+            <mx-table>
+                <mx-table.col/>
+                <mx-table.rows/>
+            </mx-table>
+            先处理mx-table.col，在处理mx-table.col时，可以通过节点间关系找到父节点mx-table，此时可以在mx-table节点上挂一些共享数据，供其它节点使用
+
+            后处理mx-table节点
+             */
             return result;
         };
 
@@ -354,6 +412,7 @@ module.exports = {
                     tempSkipTags[result.tag] = 1;
                     let jsFile = configs.components[n.pfx + 'Root'] + result.tag;
                     if (!httpProtocolReg.test(jsFile)) {
+                        //console.log(jsFile);
                         jsFile = utils.extractModuleId(jsFile);
                     }
                     e.tmplComponents.push(jsFile);
@@ -361,6 +420,7 @@ module.exports = {
             } else if (!skipTags[result.tag]) {
                 let content = result.content;
                 let fn = galleriesMap[result.tag] || configs.customTagOrAttrProcessor;
+                //console.log('xxx');
                 let customContent = fn(result, actions, extInfo, e);
                 if (!customContent && !isCustomAttr) {
                     skipTags[result.tag] = 1;
@@ -386,7 +446,8 @@ module.exports = {
                 }
                 if (hasGallery) {
                     let i = gMap[result.tag];
-                    if ((!i || !i[galleryProcessed]) && !util.isFunction(i)) {
+                    if ((!i || !i[galleryProcessed])
+                        && !util.isFunction(i)) {
                         let subs = result.subTags.slice(0, -1);
                         if (subs.length) {
                             subs = subs.join(sep);
@@ -394,18 +455,21 @@ module.exports = {
                             subs = '';
                         }
                         let main = (n.group ? '' : n.pfx + '-') + result.mainTag;
-                        let cpath = path.join(configs.moduleIdRemovedPath, gRoot, main, subs);
+                        let cpath = path.join(configs.commonFolder, gRoot, main, subs);
+                        //console.log(cpath);
                         if (fs.existsSync(cpath)) {
                             let {
                                 cfg,
                                 file: configFile
                             } = customConfig(cpath, main);
+                            //console.log(cfg, configFile);
                             if (cfg.hasOwnProperty(result.tag)) {
                                 let ci = cfg[result.tag];
                                 if (util.isFunction(ci)) {
                                     ci = {
                                         processor: ci,
-                                        file: configFile
+                                        file: configFile,
+                                        base: path.dirname(configFile)
                                     };
                                 }
                                 ci[galleryDynamic] = configFile;
@@ -450,7 +514,7 @@ module.exports = {
             }
             let tip = uncheckTags[result.tag];
             if (tip && tip !== 1) {
-                slog.ever(chalk.red('[MXC Error(tmpl-custom)] can not process tag: ' + result.tag), 'at', chalk.magenta(e.shortHTMLFile), tip.msg, chalk.magenta(tip.resolve));
+                console.log(chalk.red('[MXC Error(tmpl-custom)] can not process tag: ' + result.tag), 'at', chalk.magenta(e.shortHTMLFile), tip.msg, chalk.magenta(tip.resolve));
             }
             let update = false;
             if (n.pfx == 'mx') {
@@ -490,10 +554,12 @@ module.exports = {
                     let cs = content.split(valuable ? '??' : '?');
                     let [cond, ext] = cs;
                     update = true;
-                    let extract = tmplCmd.extractCmdContent(cond, cmdCache);
+                    cond = cond.trim();
+                    ext = ext.trim();
+                    let extract = tmplCmd.extractCmdContent(cond.trim(), cmdCache);
                     let condKey = '';
                     if (!extract.succeed) {
-                        slog.ever(chalk.red('[MXC Tip(tmpl-custom)] check condition ' + tmplCmd.recover(cond, cmdCache)), 'at', chalk.magenta(e.shortHTMLFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-custom)] check condition ' + tmplCmd.recover(cond, cmdCache)), 'at', chalk.magenta(e.shortHTMLFile));
                     } else {
                         condKey = `\x1c${tmplConditionAttrsIndex++}\x1c`;
                         tmplConditionAttrs[condKey] = {
@@ -509,7 +575,7 @@ module.exports = {
             });
             if (update) {
                 let html = `<${tag} ${attrs}`;
-                let unary = selfCloseTags.hasOwnProperty(tag);
+                let unary = result.unary;
                 if (unary) {
                     html += `/`;
                 }
@@ -529,7 +595,7 @@ module.exports = {
             let attrs = result.attrs;
             attrs = attrs.replace(attrNameValueReg, encodeEntities);
             let html = `<${tag} ${attrs}`;
-            let unary = selfCloseTags.hasOwnProperty(tag);
+            let unary = result.unary;
             if (unary) {
                 html += `/`;
             }
@@ -557,7 +623,7 @@ module.exports = {
             });
             if (update) {
                 let html = `<${tag} ${attrs}`;
-                let unary = selfCloseTags.hasOwnProperty(tag);
+                let unary = result.unary;
                 if (unary) {
                     html += `/`;
                 }
@@ -575,12 +641,19 @@ module.exports = {
             let content = '';
             let tag = result.tag;
             let attrs = result.attrs;
+            //console.log('before', attrs);
             attrs = attrs.replace(attrNameValueReg, m => {
-                return atpath.resolveContent(m, e.moduleId, '\x03')
+                m = m.replace(styleInHTMLReg, (_, fn, tail, selector) => {
+                    let b = path.dirname(e.srcHTMLFile);
+                    let fId = transformPathToModuleId(b, fn);
+                    return atViewPrefix.replace(atReg, '\x03') + `${fId}${tail}:${selector}`;
+                });
+                return atpath.resolveContent(m, e.moduleId)
                     .replace(atReg, '\x03');
             });
+            //console.log(attrs);
             let html = `<${tag} ${attrs}`;
-            let unary = selfCloseTags.hasOwnProperty(tag);
+            let unary = result.unary;
             if (unary) {
                 html += `/`;
             }
@@ -597,11 +670,15 @@ module.exports = {
             let content = '';
             let tag = result.tag;
             let attrs = result.attrs;
+            //console.log(attrs);
             attrs = attrs.replace(mxViewAttrReg, (m, q, c) => {
+                //console.log(m, q, c);
                 let { pathname, query } = url.parse(c);
+                //console.log('pn', pathname, c);
                 pathname = pathname || '';
                 pathname = addAtIfNeed(pathname);
                 pathname = atpath.resolveContent(pathname, e.moduleId);
+                //console.log('xxx', pathname);
                 let params = [];
                 query = qs.parse(query, '&', '=', {
                     decodeURIComponent(v) {
@@ -622,10 +699,11 @@ module.exports = {
                 if (params.length) {
                     view += `?${params.join('&')}`;
                 }
+                //console.log(view);
                 return `\x02="${view}"`;
             });
             let html = `<${tag} ${attrs}`;
-            let unary = selfCloseTags.hasOwnProperty(tag);
+            let unary = result.unary;
             if (unary) {
                 html += `/`;
             }

@@ -1,5 +1,4 @@
 let acorn = require('./js-acorn');
-let slog = require('./util-log');
 let chalk = require('chalk');
 module.exports = {
     process(tmpl, sourceFile) {
@@ -7,7 +6,7 @@ module.exports = {
         try {
             ast = acorn.parse(tmpl, null, sourceFile);
         } catch (ex) {
-            slog.ever(chalk.red(`[MXC Error(js-module-parser)]`), ex.message, 'near', tmpl.substring(Math.max(0, ex.pos - 20), Math.min(ex.pos + 20, tmpl.length)));
+            console.log(chalk.red(`[MXC Error(js-module-parser)]`), ex.message, '\nnear', tmpl.substring(Math.max(0, ex.pos - 20), Math.min(ex.pos + 20, tmpl.length)), 'at', chalk.grey(sourceFile));
             throw ex;
         }
         let modules = [];

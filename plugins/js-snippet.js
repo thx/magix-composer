@@ -7,7 +7,7 @@ let path = require('path');
 let cssChecker = require('./checker-css');
 let fs = require('fs');
 let sep = path.sep;
-let fileReg = /(['"`])\x12@([^'"`]+\.[jt]s)\1;?/g;
+let fileReg = /(['"`])\x12@:([^'"`]+\.m?[jt]s)\1;?/g;
 module.exports = e => {
     return new Promise((resolve, reject) => {
         let contentCache = Object.create(null),
@@ -23,10 +23,10 @@ module.exports = e => {
 
         let readFile = (key, file, ctrl) => {
             count++;
-            let to = path.resolve(configs.compiledFolder + file.replace(configs.moduleIdRemovedPath, ''));
+            let to = path.resolve(configs.compiledFolder + file.replace(configs.commonFolder, ''));
             fs.access(file, (fs.constants ? fs.constants.R_OK : fs.R_OK), err => {
                 if (err) {
-                    cssChecker.markUnexists(file, e.from);
+                    cssChecker.storeUnexist(e.shortFrom, file);
                     contentCache[key] = `(()=>{throw new Error(${JSON.stringify('unfound:' + file)})})()`;
                     count--;
                     if (!count) {
@@ -45,6 +45,7 @@ module.exports = e => {
         };
         let tasks = [];
         e.content.replace(fileReg, (m, q, name) => {
+            //console.log('-----',JSON.stringify(m));
             let file = path.resolve(path.dirname(e.from) + sep + name);
             if (e.from && e.to) {
                 deps.addFileDepend(file, e.from, e.to);

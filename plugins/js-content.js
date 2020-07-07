@@ -7,6 +7,7 @@ let chalk = require('chalk');
 let fd = require('./util-fd');
 let jsMx = require('./js-mx');
 let jsDeps = require('./js-deps');
+let cssChecker = require('./checker-css');
 let cssProcessor = require('./css');
 let tmplProcessor = require('./tmpl');
 let atpath = require('./util-atpath');
@@ -15,25 +16,27 @@ let configs = require('./util-config');
 let md5 = require('./util-md5');
 let utils = require('./util');
 
-let slog = require('./util-log');
 let fileCache = require('./js-fcache');
 let jsSnippet = require('./js-snippet');
 let jsReplacer = require('./js-replacer');
 let jsHeader = require('./js-header');
 let acorn = require('./js-acorn');
-let { galleryProcessed, revisableGReg } = require('./util-const');
+let { galleryProcessed,
+    revisableGReg,
+    atViewPrefix,
+    selfCssRefReg } = require('./util-const');
 let deps = require('./util-deps');
-let httpProtocolReg = /^['"`]https?:/i;
+//let httpProtocolReg = /^['"`]https?:/i;
 
 let lineBreakReg = /\r\n?|\n|\u2028|\u2029/;
 let mxTailReg = /\.m?mx$/;
 let stringReg = /^['"]/;
 //文件内容处理，主要是把各个处理模块串起来
-let moduleIdReg = /@(?:moduleId|id)/;
-let cssFileReg = /@(?:[\w\.\-\/\\]+?)\.(?:css|less|mx|style)/;
+let moduleIdReg = /@:(?:moduleId|id)/;
+let cssFileReg = /@:(?:[\w\.\-\/\\]+?)\.(?:css|less|mx|style)/;
 let cssFileGlobalReg = new RegExp(cssFileReg, 'g');
-let jsFileReg = /([a-z,&]+)?@([\w\.\-\/\\]+\.(?:[jt]s))/;
-let doubleAtReg = /@@/g;
+let jsFileReg = /([a-z,&]+)?@:([\w\.\-\/\\]+\.(?:m?[jt]s))/;
+//let doubleAtReg = /@@/g;
 let isGalleryConfig = file => {
     let cfg = configs.galleriesDynamicRequires[file];
     if (cfg) {
@@ -88,7 +91,7 @@ let processContent = (from, to, content, inwatch) => {
         exclude: isExcludeFile(from),
         pkgName: moduleId.slice(0, moduleId.indexOf('/')),
         moduleFileName: moduleId.substring(moduleId.lastIndexOf('/') + 1),
-        shortFrom: from.replace(configs.moduleIdRemovedPath, '').substring(1),
+        shortFrom: from.replace(configs.commonFolder, '').substring(1),
         addWrapper: headers.addWrapper,
         checker: configs.checker,
         loader: headers.loader || configs.loaderType,
@@ -99,8 +102,8 @@ let processContent = (from, to, content, inwatch) => {
         processContent
     };
     if (isGalleryConfig(from)) {
-        if (configs.log && inwatch) {
-            slog.ever('[MXC Tip(js-content)] reload:', chalk.blue(from));
+        if (inwatch) {
+            console.log('[MXC Tip(js-content)] reload:', chalk.blue(from));
         }
         delete require.cache[from];
         psychic.galleryConfigFile = true;
@@ -114,15 +117,17 @@ let processContent = (from, to, content, inwatch) => {
     psychic.exRequires.push(`"${moduleId}"`);
     //let originalContent = content;
     if (headers.execBeforeProcessor) {
+        //console.log(content);
         let result = configs.compileJSStart(content, psychic);
+        //console.log(result);
         if (util.isString(result)) {
             before = Promise.resolve(result);
         } else if (result && util.isFunction(result.then)) {
             before = result;
         }
     }
-    if (configs.log && inwatch) {
-        slog.ever('[MXC Tip(js-content)] compile:', chalk.blue(from));
+    if (inwatch) {
+        console.log('[MXC Tip(js-content)] compile:', chalk.blue(from));
     }
     return before.then(content => {
         if (util.isString(content)) {
@@ -139,11 +144,11 @@ let processContent = (from, to, content, inwatch) => {
                 let mName = idx === -1 ? null : req.substring(0, idx);
                 let p, full;
                 if (mName === e.pkgName) {
-                    p = atpath.resolvePath(`"@${req}"`, e.moduleId);
+                    p = atpath.resolvePath(`"${atViewPrefix}${req}"`, e.moduleId);
                 } else {
                     p = `"${req}"`;
                 }
-                full = atpath.resolvePath('"@' + p.slice(1, -1) + '"', e.moduleId);
+                full = atpath.resolvePath(`"${atViewPrefix}${p.slice(1, -1)}"`, e.moduleId);
                 if (e.exRequires.indexOf(p) == -1 &&
                     e.exRequires.indexOf(full) == -1 &&
                     newRequires.indexOf(p) == -1 &&
@@ -161,9 +166,8 @@ let processContent = (from, to, content, inwatch) => {
         }
         let tmpl = e.addWrapper ? jsWrapper(e) : e.content;
         let ast;
-        let comments = {};
         try {
-            ast = acorn.parse(tmpl, comments, e.from);
+            ast = acorn.parse(tmpl, null, e.from);
         } catch (ex) {
             let msg = [chalk.red(`[MXC Error(js-content)]`), 'Parse js ast error:', chalk.red(ex.message)];
             let arr = tmpl.split(lineBreakReg);
@@ -172,7 +176,7 @@ let processContent = (from, to, content, inwatch) => {
                 msg.push('near code:', chalk.green(arr[line]));
             }
             msg.push(chalk.red('js file: ' + e.from));
-            slog.ever.apply(slog, msg);
+            console.log(...msg);
             return Promise.reject(ex);
         }
         let modifiers = [];
@@ -189,6 +193,7 @@ let processContent = (from, to, content, inwatch) => {
                     add = true;
                     return md5(m, 'revisableString', configs.revisableStringPrefix);
                 });
+                raw = node.raw;
             }
             if (moduleIdReg.test(raw)) {
                 let m = raw.match(moduleIdReg);
@@ -207,10 +212,10 @@ let processContent = (from, to, content, inwatch) => {
                 }
             } else if (cssFileReg.test(raw)) {
                 node.raw = raw.replace(cssFileGlobalReg, (m, offset) => {
-                    let c = raw.charAt(offset - 1);
-                    if (c == '@') return m.substring(1);
+                    //let c = raw.charAt(offset - 1);
+                    //if (c == '@') return m.substring(1);
                     return m.replace('@', '\x12@');
-                }).replace(doubleAtReg, '@');
+                });//.replace(doubleAtReg, '@');
                 add = true;
             } else if (configs.htmlFileReg.test(raw)) {
                 let m = raw.match(configs.htmlFileReg);
@@ -265,31 +270,36 @@ let processContent = (from, to, content, inwatch) => {
                     add = true;
                 }
             } else {
-                //字符串以@开头，且包含/
-                let i = tl ? 0 : 1;
-                if (raw.charAt(i) == '@' && raw.indexOf('/') > 0) {
-                    //如果是2个@@开头则是转义
-                    if (raw.charAt(i + 1) == '@' && raw.lastIndexOf('@') == i + 1) {
-                        node.raw = raw.substring(0, i) + raw.substring(i + 1);
-                        add = true;
-                    } else if (raw.lastIndexOf('@') == i) { //只有一个，路径转换
-                        if (tl) {
-                            raw = '"' + raw + '"';
-                        }
-                        raw = atpath.resolvePath(raw, e.moduleId);
+                // //字符串以@开头，且包含/
+                if (!tl) {
+                    raw = raw.slice(1, -1);
+                }
+                let prefix = raw.substring(0, atViewPrefix.length);
+                let rest = raw.substring(atViewPrefix.length);
+                if (prefix == atViewPrefix) {
+                    if (rest.startsWith('./')) {
+                        //console.log(rest);
+                        raw = atpath.resolvePath(`"${atViewPrefix}${rest}"`, e.moduleId);
                         if (tl) {
                             raw = raw.slice(1, -1);
                         }
+                        //console.log(raw);
                         node.raw = raw;
                         add = true;
+                    } else if (rest.startsWith('~')) {
+                        let newRest = configs.resolveVirtual(rest);
+                        if (newRest &&
+                            newRest != rest) {
+                            let dest = JSON.stringify(newRest);
+                            //console.log(dest, tl);
+                            if (tl) {
+                                dest = dest.slice(1, -1);
+                            }
+                            node.raw = dest;
+                            add = true;
+                        }
                     }
                 }
-            }
-            raw = node.raw.replace(doubleAtReg, '@');
-            //console.log(raw);
-            if (raw != node.raw) {
-                node.raw = raw;
-                add = true;
             }
             if (add) {
                 modifiers.push({
@@ -327,6 +337,7 @@ let processContent = (from, to, content, inwatch) => {
             tmpl = tmpl + '\r\n' + toBottoms.join(';\r\n');
         }
         e.content = tmpl;
+        //console.log(tmpl);
         return Promise.resolve(e);
     }).then(e => {
         return jsReplacer(e);
@@ -352,6 +363,7 @@ let processContent = (from, to, content, inwatch) => {
             let addDeps = configs.tmplAddViewsToDependencies;
             if (e.noRequires || !addDeps) mxViews = [];
             mxViews = mxViews.concat(e.tmplComponents || []);
+            //console.log(e.tmplMxViewsArray);
             let reqs = [],
                 vars = [];
             for (let v of mxViews) {
@@ -359,8 +371,9 @@ let processContent = (from, to, content, inwatch) => {
                 let mName = i === -1 ? v : v.substring(0, i);
                 let p, full;
                 if (mName === e.pkgName) {
-                    p = atpath.resolvePath('"@' + v + '"', e.moduleId);
-                    full = v[0] == '@' ? p : atpath.resolvePath('"@' + p.slice(1, -1) + '"', e.moduleId);
+                    p = atpath.resolvePath(`"${atViewPrefix}${v}"`, e.moduleId);
+                    full = v[0] == '@' ? p : atpath.resolvePath(`"${atViewPrefix}${p.slice(1, -1)}"`, e.moduleId);
+                    //console.log(full);
                 } else {
                     full = v;
                     p = `"${v}"`;
@@ -368,10 +381,7 @@ let processContent = (from, to, content, inwatch) => {
                 if (e.deps.indexOf(p) === -1 &&
                     e.deps.indexOf(full) === -1 &&
                     e.exRequires.indexOf(p) === -1 &&
-                    e.exRequires.indexOf(full) == -1 &&
-                    (e.loader != 'module' ||
-                        p[1] == '.' ||
-                        httpProtocolReg.test(p))) {
+                    e.exRequires.indexOf(full) == -1) {
                     let prefix = '',
                         type = '';
                     if (e.loader == 'module') {
@@ -415,6 +425,43 @@ let processContent = (from, to, content, inwatch) => {
             e.content = e.content.replace(e.requiresAnchorKey, reqs);
             e.content = e.content.replace(e.varsAnchorKey, vars.join('\r\n'));
         }
+        return e;
+    }).then(e => {
+        e.content = e.content.replace(selfCssRefReg, (_, key) => {
+            if (key.startsWith('--')) {
+                let replacement = e.cssVarsMap[key];
+                let dest = e.declaredFiles.vars[key];
+                if (replacement && dest) {
+                    cssChecker.storeHostUsed(e.from, dest, {
+                        vars: {
+                            [key]: 1
+                        }
+                    });
+                    return replacement;
+                } else {
+                    if (configs.selectorSilentErrorCss) {
+                        return key;
+                    }
+                    return `unfound-var-[${key}]`;
+                }
+            } else {
+                let replacement = e.cssNamesMap[key];
+                let dest = e.declaredFiles.selectors[key];
+                if (replacement && dest) {
+                    cssChecker.storeHostUsed(e.from, dest, {
+                        selectors: {
+                            [key]: 1
+                        }
+                    });
+                    return replacement;
+                } else {
+                    if (configs.selectorSilentErrorCss) {
+                        return key;
+                    }
+                    return `unfound-selector-[${key}]`;
+                }
+            }
+        });
         return e;
     }).then(e => {
         let after = Promise.resolve(e);

@@ -13,22 +13,45 @@ let sepRegTmpl = sep.replace(/\\/g, '\\\\');
 let sepReg = new RegExp(sepRegTmpl, 'g');
 let startSlashReg = /^\//;
 let moduleIdCache = Object.create(null);
-let extractModuleId = (file, ignoreVirtual) => {
-    let key = file + '\x00' + ignoreVirtual;
+let fsIdCache = Object.create(null);
+let extractModuleId = (file, ignoreProjectName) => {
+    let key = file + '\x00' + ignoreProjectName;
+    //console.log(moduleIdCache);
     if (moduleIdCache[key]) {
         return moduleIdCache[key];
     }
-    let id = file.replace(configs.moduleIdRemovedPath, '')
+    let id = file.replace(configs.commonFolder, '')
         .replace(configs.jsOrCssFileExtNamesReg, '')
         .replace(sepReg, '/')
         .replace(startSlashReg, '');
-    if (!ignoreVirtual &&
-        configs.moduleAddVirtualRootToId) {
+    //console.log('fi', file, id);
+    //console.log(file, ignoreProjectName);
+    if (!ignoreProjectName &&
+        configs.addProjectNameAsVirtualRoot &&
+        !id.startsWith('~')) {
+        if (!configs.projectName) {
+            throw new Error('[MXC-Error(util.js)] missing projectName!');
+        }
         id = `~${configs.projectName}/${id}`;
     }
-    id = configs.resolveModuleId(id);
     moduleIdCache[key] = id;
     return id;
+};
+let fillAndSplitId = id => {
+    if (!fsIdCache[id]) {
+        if (id.startsWith('~') &&
+            configs.addProjectNameAsVirtualRoot) {
+            id = id.replace('~' + configs.projectName + '/', '');
+        }
+        if (!id.startsWith('/')) {
+            id = '/' + id;
+        }
+        fsIdCache[id] = {
+            prefix: configs.commonFolder,
+            postfix: id
+        };
+    }
+    return fsIdCache[id];
 };
 
 let clone = object => {
@@ -60,7 +83,7 @@ let uId = (fix, str, withoutSuffix) => {
 /**
  * Camelize a hyphen-delimited string.
  */
-let camelizeRE = /-(\w)/g;
+let camelizeRE = /-{1,}(\w)/g;
 let camelize = fcache(str => {
     return str.replace(camelizeRE, (_, c) => {
         return c ? c.toUpperCase() : '';
@@ -76,11 +99,24 @@ let hyphenate = fcache(str => {
         .replace(hyphenateRE, '-$1')
         .toLowerCase();
 });
+
+let hash = str => {
+    str = str + '';
+    let hash = 5381,
+        i = str.length;
+
+    while (i) {
+        hash = (hash * 33) ^ str.charCodeAt(--i);
+    }
+    return hash >>> 0;
+};
 module.exports = {
+    hash,
     clone,
     uId,
     cloneAssign,
     extractModuleId,
+    fillAndSplitId,
     hyphenate,
     camelize
 };

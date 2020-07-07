@@ -64,6 +64,7 @@ let {
     quickConditionReg,
     quickLoopReg,
     quickElseAttr,
+    quickGroupFnPrefix,
     tmplStoreIndexKey,
     tmplTempRealStaticKey,
     artCommandReg,
@@ -72,22 +73,25 @@ let {
     tmplGroupKeyAttr,
     tmplGroupUseAttr,
     tmplVarTempKey,
-    tmplMxViewParamKey
+    quickSourceArt,
+    tmplMxViewParamKey,
+    tmplGroupRootAttr,
+    tmplStaticKey,
+    tmplTempInlineStaticKey
 } = require('./util-const');
 let utils = require('./util');
 let util = require('util');
 let regexp = require('./util-rcache');
-let slog = require('./util-log');
 let attrMap = require('./html-attrs');
 let tmplUnescape = require('html-entities-decoder');
 let md5 = require('./util-md5');
 let chalk = require('chalk');
 let viewIdReg = /\x1f/g;
-let artCtrlReg = /(?:<%'(\d+)\x11([^\x11]+)\x11'%>)?<%([@=:&])?([\s\S]+?)%>/g;
-let inReg = /\(([\s\S]+?)\s*,\s*([^),]+),\s*([^),]+),\s*([^),]+),\s*(1|-1)\)\s*in\s+([\S\s]+)/;
-let mathcer = /<%([@=*]|\.{3})?([\s\S]*?)%>|$/g;
+let artCtrlReg = /(?:<%'(\d+)\x11([^\x11]+)\x11'%>)?<%([#=:&])?([\s\S]+?)%>/g;
+let inReg = /\(([\s\S]+?)\s*,\s*([^),]+),\s*([^),]+),\s*([^),]+),\s*(1|-1),\s*([0-9\.]+)\)\s*in\s+([\S\s]+)/;
+let mathcer = /<%([#=*]|\.{3})?([\s\S]*?)%>|$/g;
 let escapeSlashRegExp = /\\|'/g;
-let escapeBreakReturnRegExp = /\r|\n/g;
+let unescapeBreakReg = /\\n/g;
 let suffixReg = /\+'';\s*/g;
 let endReg = /;\s*$/;
 let condPlus = /\+''\+/g;
@@ -104,9 +108,27 @@ let lastCloseReg = />([^>]*)$/;
 let condEscapeReg = /^((?:\x07\d+\x07)+\s*\\*?)\\\?/;
 let tmplFnParams = ['$n', '$eu', '$_ref', '$i', '$eq', '$_is_array'];
 let tmplRadioOrCheckboxKey = 'tmpl_radio_or_checkbox_names';
-let tmplStaticVarsKey = 'tmpl_static_vars_key';
-let groupsReg = /(?:^|,)groups(?=,|$)/;
 let longExpr = /[\.\[\]]/;
+let quoteMap = {
+    '\t': '\\t',
+    '&#13;': '\\r',
+    '&#10;': '\\n',
+    '&#9;': '\\t',
+    '&#xd;': '\\r',
+    '&#xa;': '\\n',
+    '&#x9;': '\\t',
+    '&#34;': '\\"',
+    '&quot;': '\\"',
+    '&#x22;': '\\"',
+    '&#39;': '\\\'',
+    '&#x27;': '\\\'',
+    '&apos;': '\\\'',
+    '&#92;': '\\\\',
+    '&#x5c;': '\\\\'
+};
+let quoteReg = new RegExp('(?:' + Object.keys(quoteMap).join('|') + ')', 'g');
+//console.log(quoteReg);
+let quoteReplacer = m => quoteMap[m];
 let storeInnerMatchedTags = (tmpl, store) => {
     let idx = store[tmplStoreIndexKey] || 0;
     return tmpl.replace(matchedTagReg, (m, prefix, tag, content, suffix) => {
@@ -141,6 +163,7 @@ let extractArtAndCtrlFrom = tmpl => {
     let result = [];
     //console.log(tmpl);
     tmpl.replace(artCtrlReg, (match, line, art, operate, ctrl) => {
+        art = art.replace(unescapeBreakReg, '\n');
         result.push({
             origin: match,
             line,
@@ -151,6 +174,7 @@ let extractArtAndCtrlFrom = tmpl => {
     });
     return result;
 };
+
 let toFn = (key, tmpl, fromAttr) => {
     //tmpl = tmpl.replace(/%>\s+<%/g, '%><%');
     //console.log(tmpl);
@@ -168,9 +192,7 @@ let toFn = (key, tmpl, fromAttr) => {
         hasVarOut = false,
         reg = regexp.get(`${regexp.escape(key)}\\+='';+`, 'g');
     tmpl.replace(mathcer, (match, operate, content, offset) => {
-        snippet = tmpl.substring(index, offset)
-            .replace(escapeSlashRegExp, `\\$&`)
-            .replace(escapeBreakReturnRegExp, `\\n`);
+        snippet = attrMap.escapeSlashAndBreak(tmpl.substring(index, offset));
         if (snippet) {
             hasSnippet = hasSnippet || !content || !setStart;
             hasCharSnippet = hasCharSnippet || !!snippet.trim();
@@ -181,7 +203,9 @@ let toFn = (key, tmpl, fromAttr) => {
         }
         setStart = true;
         //if (decode) {
-        snippet = tmplUnescape(snippet);
+        //console.log(snippet, JSON.stringify(snippet));
+        snippet = tmplUnescape(snippet.replace(quoteReg, quoteReplacer));
+        //console.log(snippet);
         //}
         source += snippet;
         index = offset + match.length;
@@ -189,13 +213,14 @@ let toFn = (key, tmpl, fromAttr) => {
         let artReg = /^'(\d+)\x11([^\x11]+)\x11'$/;
         let artMatch = ctrl.match(artReg);
         let art = '', line = -1;
-        ctrl = ctrl.replace(escapeSlashRegExp, `\\$&`).replace(escapeBreakReturnRegExp, `\\n`);
+        ctrl = attrMap.escapeSlashAndBreak(ctrl);
         if (artMatch) {
             ctrl = '';
             art = artMatch[2];
             line = artMatch[1];
         }
-        if (operate == '@') {
+        if (operate == '@' ||
+            operate == '#') {
             hasOut = true;
             hasCmdOut = true;
             hasVarOut = true;
@@ -205,9 +230,9 @@ let toFn = (key, tmpl, fromAttr) => {
             let out = `$i($_ref,${content})`;
             if (configs.debug) {
                 if (preArt == offset) {
-                    source += `$__ctrl='<%@${ctrl}%>',${out})+'`;
+                    source += `$__ctrl='<%${operate}${ctrl}%>',${out})+'`;
                 } else {
-                    source += `'+($__ctrl='<%@${ctrl}%>',${out})+'`;
+                    source += `'+($__ctrl='<%${operate}${ctrl}%>',${out})+'`;
                 }
             } else {
                 source += `'+${out}+'`;
@@ -220,7 +245,8 @@ let toFn = (key, tmpl, fromAttr) => {
             if ((!content.startsWith('$eq(') &&
                 !content.startsWith('$i(') &&
                 !content.startsWith('$eu(') &&
-                !content.startsWith('$n('))) {
+                !content.startsWith('$n(')) &&
+                content != '$viewId') {
                 safe = '$n';
             }
             let out = `${safe}(${content})`;
@@ -250,6 +276,7 @@ let toFn = (key, tmpl, fromAttr) => {
         } else if (content) {
             if (line > -1) {
                 preArt = index;
+                //console.log(art);
                 source += `'+($__line=${line},$__art='{{${art}}}',`;
                 hasVarOut = true;
             } else {
@@ -268,8 +295,9 @@ let toFn = (key, tmpl, fromAttr) => {
         return match;
     });
     source += `';`;
+    //console.log(JSON.stringify(source));
     source = source
-        .replace(viewIdReg, `'+$_viewId+'`)
+        .replace(viewIdReg, `'+$viewId+'`)
         .replace(reg, '');
     reg = regexp.get(`^${regexp.escape(key)}=''\\+`);
     source = source
@@ -348,15 +376,17 @@ let getForContent = (cnt, e) => {
             first: m[3],
             last: m[4],
             value: m[1],
-            list: m[6],
+            list: m[7],
             key: m[2],
-            asc: m[5] == 1
+            asc: m[5] == 1,
+            step: Number(m[6])
         };
     }
     throw new Error('[MXC-Error(tmpl-quick)] bad loop ' + cnt + ' at ' + e.shortHTMLFile);
 };
 let getIfContent = (cnt, e) => {
     let fi = extractArtAndCtrlFrom(cnt);
+    //console.log(fi);
     if (fi.length > 1 || fi.length < 1) {
         throw new Error('[MXC-Error(tmpl-quick)] bad if ' + cnt + ' at ' + e.shortHTMLFile);
     }
@@ -369,6 +399,7 @@ let getIfContent = (cnt, e) => {
             value: m[1]
         };
     }
+    //console.log(m,fi);
     throw new Error('[MXC-Error(tmpl-quick)] bad if ' + cnt + ' at ' + e.shortHTMLFile);
 };
 let parser = (tmpl, e) => {
@@ -385,13 +416,15 @@ let parser = (tmpl, e) => {
             attrs,
             unary,
             start,
+            end,
             attrsMap
         }) {
             let token = {
                 tag,
                 type: 1,
                 ctrls: [],
-                children: []
+                children: [],
+                contentStart: end
             };
             if (textareaCount) {
                 token.start = start;
@@ -427,7 +460,8 @@ let parser = (tmpl, e) => {
                         key: fi.key,
                         value: fi.value,
                         list: fi.list,
-                        asc: fi.asc
+                        asc: fi.asc,
+                        step: fi.step
                     });
                     token.hasCtrls = true;
                 } else if (a.name == quickIfAttr ||
@@ -463,6 +497,13 @@ let parser = (tmpl, e) => {
                 } else if (a.name == tmplTempRealStaticKey) {
                     token.canHoisting = true;
                     token.staticValue = a.value;
+                    aList.push({
+                        name: tmplStaticKey,
+                        value: a.value,
+                        unary: false
+                    });
+                } else if (a.name == tmplTempInlineStaticKey) {
+                    token.inlineStaticValue = a.value;
                 } else if (a.name == 'x-html' ||
                     a.name == 'inner-html') {
                     token.xHTML = a.value;
@@ -473,17 +514,24 @@ let parser = (tmpl, e) => {
                 } else if (a.name == tmplGroupUseAttr) {
                     token.groupUse = a.value;
                     token.groupUseNode = tag == tmplGroupTag;
-                } else if (a.name == 'context') {
+                } else if (a.name == 'fn') {
                     token.groupContextNode = tag == tmplGroupTag;
-                    token.groupContext = a.value;
+                    token.groupContext = a.value || '';
+                } else if (a.name == tmplGroupRootAttr) {
+                    token.groupRootRefs = a.value;
                 } else if (a.name != quickDeclareAttr &&
                     a.name != quickOpenAttr &&
                     !a.name.startsWith(tmplCondPrefix)) {
+                    //console.log(a.name);
                     if (a.name == 'type' &&
                         !a.unary &&
                         tag == 'input') {
                         token.inputType = a.value;
-                    } else if (condPrefix.test(a.name)) {
+                    } /*else if (a.name == 'value' &&
+                        !a.unary &&
+                        tag == 'input') {
+                        token.inputHasValue = true;
+                    }*/ else if (condPrefix.test(a.name)) {
                         let cond = '';
                         a.name = a.name.replace(condPrefix, m => {
                             cond = m;
@@ -512,17 +560,41 @@ let parser = (tmpl, e) => {
                         a.cond = composer;
                         //console.log(a.name, a.value, refCond, cmds);
                     } else if (!a.unary) {
+                        tmplCommandAnchorReg.lastIndex = 0;
+                        if (tmplCommandAnchorReg.test(a.name)) {
+                            let src = tmplCmd.recover(a.name, cmds);
+                            let { line, art } = artExpr.extractCmdToArt(src);
+                            console.log(chalk.red(`unsupport attr: ${art} at line ${line} at file: ${e.shortHTMLFile}`));
+                            continue;
+                        }
+                        tmplCommandAnchorReg.lastIndex = 0;
                         if (a.value.startsWith('\x07')) {
                             a.value = a.value.replace(condEscapeReg, '$1?');
-                        } else if (a.value.startsWith('\x1f')) {
+                        } else if (a.value.includes('\x1f')) {
                             token.attrHasDynamicViewId = true;
-                        } else if (a.name == 'mx-view') {
+                            token.canHoisting = false;
+                        }
+                        if (a.name == 'mx-owner') {
+                            token.hasMxOwner = true;
+                        }
+                        if (a.name == 'mx-view') {
                             token.isMxView = true;
                         }
                     }
                     aList.push(a);
                 }
             }
+            //console.log(token.isMxView, token.hasMxOwner, token.tag);
+            if (token.isMxView &&
+                !token.hasMxOwner &&
+                configs.addMxOwnerToMxViewNode) {
+                aList.unshift({
+                    name: 'mx-owner',
+                    value: '\x1f',
+                    unary: false
+                });
+            }
+            //console.log(token, aList);
             token.attrs = aList;
             token.unary = unary;
             token.auto = auto;
@@ -539,7 +611,7 @@ let parser = (tmpl, e) => {
                 current = token;
             }
         },
-        end(tag, { end }) {
+        end(tag, { start, end }) {
             let e = stack.pop();
             if (tag == 'textarea') {
                 textareaCount--;
@@ -560,6 +632,10 @@ let parser = (tmpl, e) => {
 
             if (textareaCount) {
                 e.content = tmpl.slice(e.start, end);
+            }
+            if (e.contentStart >= 0) {
+                e.innerHTML = tmpl.slice(e.contentStart, start);
+                delete e.contentStart;
             }
             if (e.hasXHTML) {
                 e.children = [{
@@ -614,6 +690,7 @@ let Directives = {
     'each'(ctrl, start, end, auto) {
         let shortList = utils.uId('$q_a_', '', 1);
         let listCount = utils.uId('$q_c_', '', 1);
+        //console.log(ctrl);
         let decs = `let ${shortList}=${ctrl.list},`;
         if (!longExpr.test(ctrl.list)) {
             decs = 'let ';
@@ -654,14 +731,14 @@ let Directives = {
         }
         //console.log(decs);
         if (ctrl.asc) {
-            start.push(`\r\nfor(${decs};${ctrl.key}<${listCount};${ctrl.key}++){\r\n${initial}\r\n`);
+            start.push(`\r\nfor(${decs};${ctrl.key}<${listCount};${ctrl.key}+=${ctrl.step}){\r\n${initial}\r\n`);
         } else {
-            start.push(`\r\nfor(${decs};${ctrl.key}--;){\r\n${initial}\r\n`);
+            start.push(`\r\nfor(${decs};${ctrl.key}>=0;${ctrl.key}-=${ctrl.step}){\r\n${initial}\r\n`);
         }
         end.push('\r\n}');
     },
     'forin'(ctrl, start, end, auto) {
-        let initial = ctrl.value.startsWith('$q_v_') ? '' : `{let ${ctrl.value}=${ctrl.list}[${ctrl.key}];`;
+        let initial = ctrl.value.startsWith('$q_v_') ? '' : `let ${ctrl.value}=${ctrl.list}[${ctrl.key}];`;
         if (configs.debug) {
             let open = auto ? '{{forin ' : quickForInAttr + '="{{'
             let art = `${open}${ctrl.art}}}${auto ? '' : '"'}`;
@@ -721,21 +798,23 @@ let preProcess = (src, e) => {
         let ref = cmds[m];
         if (ref) {
             let i = artExpr.extractArtInfo(ref);
+            //console.log(ref,i)
             if (i) {
                 let { art, ctrls, line } = i;
+                let sourceArt = ` ${quickSourceArt}="${attrMap.escapeAttr(art)}"`;
                 if (ctrls[0] == 'each') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickEachAttr}="{{\x1e${line}${art.substring(5)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickEachAttr}="{{\x1e${line}${art.substring(5)}}}">`;
                 } else if (ctrls[0] == 'forin') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForInAttr}="{{\x1e${line}${art.substring(6)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForInAttr}="{{\x1e${line}${art.substring(6)}}}">`;
                 } else if (ctrls[0] == 'for') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForAttr}="{{\x1e${line}${art.substring(4)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForAttr}="{{\x1e${line}${art.substring(4)}}}">`;
                 } else if (ctrls[0] == 'if') {
-                    return `<${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickIfAttr}="{{\x1e${line}${art.substring(3)}}}">`;
+                    return `<${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickIfAttr}="{{\x1e${line}${art.substring(3)}}}">`;
                 } else if (ctrls[0] == 'else') {
                     if (ctrls[1] == 'if') {
-                        return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseIfAttr}="{{\x1e${line}${art.substring(7)}}}">`;
+                        return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseIfAttr}="{{\x1e${line}${art.substring(7)}}}">`;
                     }
-                    return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseAttr}>`;
+                    return `</${quickGroupTagName} ${quickCloseAttr}="<%}%>"><${quickGroupTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseAttr}>`;
                 } else if (art.startsWith('/each') ||
                     art.startsWith('/forin') ||
                     art.startsWith('/for') ||
@@ -748,9 +827,12 @@ let preProcess = (src, e) => {
         }
         return m;
     });
+    //console.log(src);
 
     src = tmplCmd.store(src, cmds, artCommandReg);
+    //console.log(src);
     src = storeHTML(src, tags);
+    //console.log(src);
     while (tagHReg.test(src)) {
         tagHReg.lastIndex = 0;
         src = src.replace(tagHReg, m => {
@@ -768,7 +850,7 @@ let preProcess = (src, e) => {
                             expr.value = utils.uId('$q_v_', '', 1);
                         }
                         if (expr.bad || expr.splitter != 'as') {
-                            slog.ever(chalk.red(`[MXC-Error(tmpl-quick)] unsupport or bad ${k} {{${li.art}}} at line:${li.line}`), 'file', chalk.grey(e.shortHTMLFile));
+                            console.log(chalk.red(`[MXC-Error(tmpl-quick)] unsupport or bad ${k} {{${li.art}}} at line:${li.line}`), 'file', chalk.grey(e.shortHTMLFile));
                             throw new Error(`[MXC-Error(tmpl-quick)] unsupport or bad ${k} {{${li.art}}} at ${e.shortHTMLFile}`);
                         }
                         if (!expr.index) {
@@ -794,16 +876,17 @@ let preProcess = (src, e) => {
                             prefix = quickOpenAttr + '="<%{%>" ';
                         }
                         //console.log(expr.value);
-                        return `${prefix}${quickDeclareAttr}="<%let ${expr.index},${expr.value}=${expr.iterator}[${expr.index}]${flv}%>" ${k}="<%'${li.line}\x11${li.art.replace(escapeSlashRegExp, '\\$&')}\x11'%><%(${expr.value},${expr.index}${firstAndLastVars},${expr.asc ? 1 : -1}) in ${expr.iterator}%>"`;
+                        return `${prefix}${quickDeclareAttr}="<%let ${expr.index},${expr.value}=${expr.iterator}[${expr.index}]${flv}%>" ${k}="<%'${li.line}\x11${attrMap.escapeSlashAndBreak(li.art)}\x11'%><%(${expr.value},${expr.index}${firstAndLastVars},${expr.asc ? 1 : -1},${expr.step}) in ${expr.iterator}%>"`;
                     }
                     return _;
                 }).replace(quickConditionReg, (_, k, $, c) => {
                     c = tmplCmd.recover(c, cmds);
+                    //console.log('qod',c);
                     let li = artExpr.extractArtInfo(c);
                     if (li) {
                         let expr = artExpr.extractIfExpr(li.art);
                         let key = k == quickForAttr ? 'for' : 'if';
-                        return `${k}="<%'${li.line}\x11${li.art.replace(escapeSlashRegExp, '\\$&')}\x11'%><%${key}(${expr});%>"`;
+                        return `${k}="<%'${li.line}\x11${attrMap.escapeSlashAndBreak(li.art)}\x11'%><%${key}(${expr});%>"`;
                     }
                     return _;
                 });
@@ -877,6 +960,7 @@ let combineSamePush = (src, pushed) => {
     return src;
 };
 let process = (src, e) => {
+    //console.log(src);
     let { cmds, tokens } = parser(`${src}`, e);
     let snippets = [];
     let vnodeDeclares = Object.create(null),
@@ -886,11 +970,13 @@ let process = (src, e) => {
         specialStaticVars = {},
         specialFlags = {},
         specialFlagIndex = 0,
-        groupKeyAsParams = Object.create(null),
         staticNodes = Object.create(null),
         staticObjects = Object.create(null),
         staticCounter = 0,
-        staticUniqueKey = md5(e.shortHTMLFile, tmplStaticVarsKey, '', true);
+        staticUniqueKey = e.shortHTMLUId,
+        rootCanHoisting = true,
+        //passedGroupRootRefs = [],
+        fnGroupsRootMapped = Object.create(null);
     let genElement = (node, level, inStaticNode) => {
         if (node.type == 3) {
             let cnt = tmplCmd.recover(node.content, cmds);
@@ -934,13 +1020,48 @@ let process = (src, e) => {
                 hasRestElement = false,
                 attrKeys = Object.create(null),
                 specialKey = '';
+            //console.log(node.tag, node.attrs);
             if (node.attrs.length) {
                 hasAttrs = true;
                 for (let a of node.attrs) {
+                    //console.log(groupKeyAsParams);
                     if (node.isMxView &&
-                        a.name == tmplMxViewParamKey &&
-                        groupKeyAsParams.groups) {
-                        a.value = a.value.replace(groupsReg, '#');
+                        a.name == tmplMxViewParamKey) {
+                        //console.log(a.value);
+                        let oldKeys = a.value.split(',');
+                        let itKeys = [];
+                        for (let ok of oldKeys) {
+                            //console.log(ok,fnGroupsRootMapped);
+                            //if (ok == '$groups') {
+                            //itKeys.push(...passedGroupRootRefs);
+                            //} else 
+                            //console.log(ok);
+                            if (ok.startsWith(quickGroupFnPrefix)) {
+                                let refs = fnGroupsRootMapped[ok];
+                                if (refs) {
+                                    itKeys.push(...refs);
+                                }
+                            } else {
+                                itKeys.push(ok);
+                            }
+                        }
+                        let newKeys = [];
+                        //console.log(itKeys);
+                        for (let k of itKeys) {
+                            if (k !== '$viewId' &&
+                                !newKeys.includes(k)) {
+                                newKeys.push(k);
+                            }
+                        }
+                        if (newKeys.length) {
+                            a.value = newKeys.join(',');
+                        } else {
+                            continue;
+                        }
+                    }
+                    if (a.name.startsWith('mx') &&
+                        !a.name.startsWith(configs.mxPrefix)) {
+                        a.name = configs.mxPrefix + a.name.substring(2);
                     }
                     if (configs.tmplRadioOrCheckboxRename &&
                         a.name == 'name' &&
@@ -951,9 +1072,13 @@ let process = (src, e) => {
                         tmplCommandAnchorReg.lastIndex = 0;
                         if (tmplCommandAnchorReg.test(a.value)) {
                             tmplCommandAnchorReg.lastIndex = 0;
-                            newValue = `${configs.projectName}_${a.value}`;
+                            if (configs.hashedProjectName) {
+                                newValue = `${configs.hashedProjectName}_${a.value}`;
+                            } else {
+                                newValue = a.value;
+                            }
                         } else {
-                            newValue = `${configs.projectName}_${md5(e.from + ':' + a.value, tmplRadioOrCheckboxKey, '', true)}`;
+                            newValue = (configs.hashedProjectName ? configs.hashedProjectName + '_' : '') + md5(e.from + ':' + a.value, tmplRadioOrCheckboxKey);
                         }
                         a.value = newValue;
                     }
@@ -965,7 +1090,7 @@ let process = (src, e) => {
                     if (attrKeys[a.name] === 1 &&
                         e.checker.tmplDuplicateAttr) {
                         let v = a.unary ? '' : `="${a.value}"`;
-                        slog.ever(chalk.red('[MXC Tip(tmpl-quick)] duplicate attr:' + a.name), 'near:', chalk.magenta(a.name + v), ' at file:', chalk.grey(e.shortHTMLFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-quick)] duplicate attr:' + a.name), 'near:', chalk.magenta(a.name + v), 'at file:', chalk.grey(e.shortHTMLFile));
                         continue;
                     }
                     attrKeys[a.name] = 1;
@@ -981,6 +1106,7 @@ let process = (src, e) => {
                     let key = `$$_${a.name.replace(/[^a-zA-Z]/g, '_')}`;
                     //console.log('leave', a.value);
                     let attr = serAttrs(key, a.value, !bAttr);
+                    //console.log(attr.returned);
                     hasCtrl = attr.hasCtrl;
                     if (attr.hasCmdOut || attr.hasVarOut || a.cond) {
                         hasCmdOut = true;
@@ -1033,7 +1159,7 @@ let process = (src, e) => {
                         }
                     }
                     //console.log(a.cond);
-                    //console.log(cond, attr.returned);
+                    //console.log(cond, attr.returned,a.value,outputBoolean);
                     if (configs.debug &&
                         attr.direct &&
                         (bAttr ||
@@ -1050,6 +1176,7 @@ let process = (src, e) => {
                             attr.returned = `(${assign}${tmplVarTempKey}!==true&&${tmplVarTempKey}!==false&&console.error('make sure attr:"${a.name}" returned only true or false value\\r\\nat line:'+$__line+'\\r\\nat file:${e.shortHTMLFile}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
                         }
                     }
+                    //console.log(attr);
                     if (attr.direct) {
                         if (hasRestElement) {
                             ctrlAttrs.push({
@@ -1077,6 +1204,7 @@ let process = (src, e) => {
                             });
                         }
                     }
+                    //console.log(ctrlAttrs);
                     if (configs.debug && bAttr && !attr.direct) {
                         ctrlAttrs.push({
                             ctrl: `(${key}!==true&&${key}!==false&&console.error('make sure attr:"${a.name}" returned only true or false value\\r\\nat line: '+$__line+'\\r\\nat file:${e.shortHTMLFile}\\r\\ncurrent returned value is:',JSON.stringify(${key})));`
@@ -1087,9 +1215,10 @@ let process = (src, e) => {
                 let mustUseProps = [];
                 if (hasInlineCtrl) {
                     if (hasRestElement) {
+                        //console.log(ctrlAttrs);
                         for (let c of ctrlAttrs) {
                             if (c.type != 'mixed' && c.type != 'direct') {
-                                dynamicAttrs += c.ctrl;
+                                dynamicAttrs += c.ctrl + ';';
                             }
                         }
                         attrsStr = '{';
@@ -1118,7 +1247,7 @@ let process = (src, e) => {
                     } else {
                         dynamicAttrs += ';';
                         for (let c of ctrlAttrs) {
-                            dynamicAttrs += c.ctrl;
+                            dynamicAttrs += c.ctrl + ';';
                         }
                         attrsStr = '{';
                         for (let p in attrs) {
@@ -1146,6 +1275,7 @@ let process = (src, e) => {
                         }
                     }
                     attrsStr += '}';
+                    //console.log(node);
                     if (!hasCmdOut &&
                         !hasCtrl &&
                         !node.canHoisting &&
@@ -1205,9 +1335,21 @@ let process = (src, e) => {
             let key = '';
             if (node.groupKeyNode) {
                 if (node.groupContextNode) {
-                    snippets.push(`\ngroups.${node.groupKey}=${node.groupContext}=>{\n`);
-                    groupKeyAsParams.groups = 1;
-                    groupKeyAsParams[node.groupContext] = 1;
+                    let newKey = `${quickGroupFnPrefix}${staticUniqueKey}_${node.groupKey}`;
+                    if (!node.groupRootRefs) {
+                        specialStaticVars[newKey] = '';
+                        snippets.push(`\nif(!${newKey}){`);
+                    } else {
+                        let refs = node.groupRootRefs.split(',');
+                        fnGroupsRootMapped[`${quickGroupFnPrefix}${node.groupKey}`] = refs;
+                        // for (let ref of refs) {
+                        //     if (!passedGroupRootRefs.includes(ref)) {
+                        //         passedGroupRootRefs.push(ref);
+                        //     }
+                        // }
+                    }
+
+                    snippets.push(`\n${node.groupRootRefs ? 'let ' : ''}${newKey}=(${node.groupContext})=>{\n`);
                 }
                 if (node.canHoisting) {
                     key = staticNodes[node.staticValue];
@@ -1218,16 +1360,19 @@ let process = (src, e) => {
                         });
                         staticNodes[node.staticValue] = key;
                     }
-                } else {
+                } else if (!node.groupContextNode) {
+                    //console.log(node);
                     key = `$$_group_` + node.groupKey;
                     vnodeDeclares[key] = 1;
                 }
             }
             if (node.canHoisting) {
+                //console.log(node);
                 if (node.groupKeyNode) {
                     snippets.push(`\r\nif(!${key}){\r\n`);
                 } else {
                     key = staticNodes[node.staticValue];
+                    //let exists = key;
                     if (!key) {
                         key = `$quick_${staticUniqueKey}_${staticCounter++}_static_node`;
                         staticVars.push({
@@ -1243,6 +1388,18 @@ let process = (src, e) => {
                     }
                     snippets.push(`\r\n}else{\r\n`);
                 }
+            } else if (node.inlineStaticValue) {
+                key = `$inline$${staticUniqueKey}_${node.inlineStaticValue}`;
+                if (!vnodeDeclares[key]) {
+                    vnodeDeclares[key] = 1;
+                }
+                snippets.push(`\r\nif(${key}){\r\n`);
+                if (vnodeInited[level]) {
+                    snippets.push(`$vnode_${level}.push(${key});`);
+                } else {
+                    snippets.push(`$vnode_${level}=[${key}];`);
+                }
+                snippets.push(`\r\n}else{\r\n`);
             }
             if (node.children.length) {
                 vnodeDeclares['$vnode_' + (level + 1)] = 1;
@@ -1332,12 +1489,15 @@ let process = (src, e) => {
                         } else {
                             snippets.push(`\nreturn $vnode_${level + 1};\n};\n`);
                         }
+                        if (!node.groupRootRefs) {
+                            snippets.push(`}\n`);
+                        }
                     } else {
                         let src = `\r\n${prefix}=$vnode_${level + 1};`;
                         snippets.push(src);
                     }
                 } else {
-                    let prefix = node.canHoisting ? `${key}=` : '',
+                    let prefix = (node.canHoisting || node.inlineStaticValue) ? `${key}=` : '',
                         src = '';
                     if (node.groupUseNode) {
                         let declared = vnodeDeclares[`$$_group_${node.groupUse}`];
@@ -1385,7 +1545,8 @@ let process = (src, e) => {
                         snippets.push(src);
                     }
                 }
-                if (node.canHoisting) {
+                if (node.canHoisting ||
+                    node.inlineStaticValue) {
                     snippets.push('\r\n}\n');
                 }
             }
@@ -1394,25 +1555,38 @@ let process = (src, e) => {
     };
     vnodeInited[0] = 1;
     for (let t of tokens) {
-        genElement(t, 0);
+        if (!t.canHoisting) {
+            rootCanHoisting = false;
+        }
+    }
+    if (rootCanHoisting) {
+        for (let t of tokens) {
+            delete t.canHoisting;
+            for (let i = t.attrs.length; i--;) {
+                let v = t.attrs[i];
+                if (v.name == tmplStaticKey) {
+                    t.attrs.splice(i, 1);
+                    break;
+                }
+            }
+        }
+    }
+    for (let t of tokens) {
+        genElement(t, 0, rootCanHoisting);
     }
     let source = `let ${tmplVarTempKey},$vnode_0=[]`;
-    let hasGroupFunction = false;
+    //let hasGroupFunction = e.globalGroupKeys.length > 0;
+    //let hasGroupFunction = passedGroupRootRefs.length > 0;
     if (e.globalVars.length) {
         let vars = ',\r\n{';
         for (let key of e.globalVars) {
-            if (!groupKeyAsParams[key]) {
+            if (key != '$viewId' &&
+                !key.startsWith(quickGroupFnPrefix)) {
                 vars += `\r\n\t${key},`;
-            } else {
-                hasGroupFunction = true;
             }
         }
         source += vars + '}=$$';
     }
-    if (hasGroupFunction) {
-        source += `,\r\ngroups={}`;
-    }
-
     for (let vd in vnodeDeclares) {
         source += ',\r\n' + vd;
         let v = vnodeDeclares[vd];
@@ -1420,7 +1594,20 @@ let process = (src, e) => {
             source += `=${v}`;
         }
     }
-    source = `${source};\r\n${snippets.join('')} \r\nreturn $_create($_viewId,0,$vnode_0);`;
+    let key = `$quick_root_${staticUniqueKey}_${staticCounter++}_static_node`;
+    if (rootCanHoisting) {
+        staticVars.push({
+            key
+        });
+        source = `if(!${key}){\r\n${source}`;
+    }
+    let rootNode = `${rootCanHoisting ? `${key}=` : ''}$_create($viewId,0,$vnode_0);`;
+
+    source += `\r\n${snippets.join('')} \r\n`;
+    if (rootCanHoisting) {
+        source += rootNode + '\r\n}';
+    }
+    source += `\r\nreturn ${rootCanHoisting ? key : rootNode}`;
     source = combineSamePush(source, combinePushed);
     if (configs.debug) {
         source = `let $__art, $__line, $__ctrl; try { ${source} \r\n} catch (ex) { let msg = 'render view error:' + (ex.message || ex); msg += '\\r\\n\\tsrc art: ' + $__art + '\\r\\n\\tat line: ' + $__line; msg += '\\r\\n\\ttranslate to: ' + $__ctrl + '\\r\\n\\tat file:${e.shortHTMLFile}'; throw msg; } `;
@@ -1438,7 +1625,7 @@ let process = (src, e) => {
     for (let i = 0; i <= idx; i++) {
         params += ',' + tmplFnParams[i];
     }
-    source = `($$, $_create,$_viewId${params})=> { \r\n${source} } `;
+    source = `($$, $_create,$viewId${params})=> { \r\n${source} } `;
     for (let i in staticObjects) {
         let v = staticObjects[i];
         if (!v.inStatic || v.used > 1) {
@@ -1447,7 +1634,7 @@ let process = (src, e) => {
                 value: i
             });
         } else {
-            source = source.replace(v.key, i);
+            source = source.replace(v.key, regexp.encode(i));
         }
     }
     for (let s in specialStaticVars) {
@@ -1456,6 +1643,12 @@ let process = (src, e) => {
             value: specialStaticVars[s]
         });
     }
+    // if (hasGroupFunction) {
+    //     staticVars.push({
+    //         key: `${staticUniqueKey}_groups`,
+    //         value: `{}`
+    //     });
+    // }
     return {
         source,
         statics: staticVars

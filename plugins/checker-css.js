@@ -1,5 +1,4 @@
 let configs = require('./util-config');
-let slog = require('./util-log');
 let chalk = require('chalk');
 let consts = require('./util-const');
 
@@ -24,6 +23,24 @@ let FileStylesComplex = Object.create(null);
 let FileStylesGlobalVarUsed = Object.create(null);
 
 module.exports = {
+    reset() {
+        //文件之间关系，主要通过js关联的html和css
+        FileRelationships = Object.create(null);
+        //记录js文件中，如@scoped.style:--css-var使用的选择器，变量等
+        FileHostUsed = Object.create(null);
+        //记录样式文件声明了哪些选择器，变量及@规则
+        FileStylesDeclared = Object.create(null);
+        //记录模板文件中使用了哪些选择器，css变量
+        FileTemplatesUsed = Object.create(null);
+        //追踪不存在的文件
+        FileUnexists = Object.create(null);
+        //记录样式文件中[ref="@path.css:selector"]使用的选择器或变量
+        FileStylesUsed = Object.create(null);
+        //记录复杂的样式
+        FileStylesComplex = Object.create(null);
+        //记录使用过的全局变量
+        FileStylesGlobalVarUsed = Object.create(null);
+    },
     resetByHost(from) {
         delete FileRelationships[from];
         delete FileHostUsed[from];
@@ -284,26 +301,26 @@ module.exports = {
 
         for (let host in unexist) {
             let dest = unexist[host];
-            let hostShort = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let hostShort = host.replace(configs.commonFolder, '').substring(1);
             for (let aim in dest) {
                 let selectors = dest[aim];
-                let aimShort = aim.replace(configs.moduleIdRemovedPath, '').substring(1);
+                let aimShort = aim.replace(configs.commonFolder, '').substring(1);
                 for (let selector in selectors) {
                     for (let key in selectors[selector]) {
-                        slog.ever('[MXC(checker)]', chalk.grey(hostShort), 'use unexist', chalk.red(key), 'from', chalk.grey(aimShort));
+                        console.log('[MXC(checker)]', chalk.grey(hostShort), 'use unexist or unapplied', chalk.red(key), 'from', chalk.grey(aimShort));
                     }
                 }
             }
         }
         for (let p in FileStylesComplex) {
-            let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = p.replace(configs.commonFolder, '').substring(1);
             let rules = FileStylesComplex[p];
-            slog.ever('[MXC(checker)]', chalk.grey(short) + ' avoid use ' + chalk.red(`"${rules.join('","')}"`));
+            console.log('[MXC(checker)]', chalk.grey(short) + ' avoid use ' + chalk.red(`"${rules.join('","')}"`));
         }
 
         for (let fn in declared) {
             let selectors = declared[fn];
-            let short = fn.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = fn.replace(configs.commonFolder, '').substring(1);
             let neverUsedSelectors = [],
                 neverUsedTagsOrAttrs = [],
                 neverUsedVars = [],
@@ -329,21 +346,21 @@ module.exports = {
                 }
             }
             if (neverUsedSelectors.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used selectors ' + chalk.red(`"${neverUsedSelectors.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used selectors ' + chalk.red(`"${neverUsedSelectors.join('","')}"`));
             }
             if (neverUsedTagsOrAttrs.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used tags or attrs ' + chalk.red(`"${neverUsedTagsOrAttrs.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used tags or attrs ' + chalk.red(`"${neverUsedTagsOrAttrs.join('","')}"`));
             }
             if (neverUsedVars.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used vars ' + chalk.red(`"${neverUsedVars.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used vars ' + chalk.red(`"${neverUsedVars.join('","')}"`));
             }
             if (neverUsedAtRules.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used at rules ' + chalk.red(`"${neverUsedAtRules.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used at rules ' + chalk.red(`"${neverUsedAtRules.join('","')}"`));
             }
         }
 
         for (let host in FileTemplatesUsed) {
-            let short = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = host.replace(configs.commonFolder, '').substring(1);
             let dest = FileTemplatesUsed[host];
             let undeclared = [];
             let tUsed = templateUsed[host];
@@ -366,21 +383,21 @@ module.exports = {
                 }
             }
             if (undeclared.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(`"${undeclared.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(`"${undeclared.join('","')}"`));
             }
         }
         for (let fu in FileUnexists) {
-            let short = fu.replace(configs.moduleIdRemovedPath, '').substring(1);
-            slog.ever('[MXC(checker)]', chalk.grey(short), 'can not find', chalk.red(FileUnexists[fu]));
+            let short = fu.replace(configs.commonFolder, '').substring(1);
+            console.log('[MXC(checker)]', chalk.grey(short), 'can not find', chalk.red(FileUnexists[fu]));
         }
         for (let host in FileStylesGlobalVarUsed) {
-            let short = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = host.replace(configs.commonFolder, '').substring(1);
             let dest = FileStylesGlobalVarUsed[host];
             let used = usedGlobalVars[host];
             for (let key in dest) {
                 if (!used ||
                     used[key] != ItemDeclared) {
-                    slog.ever('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(key));
+                    console.log('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(key));
                 }
             }
         }

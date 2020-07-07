@@ -5,29 +5,28 @@
     3.　检测不支持的写法
  */
 let chalk = require('chalk');
-let slog = require('./util-log');
 let utils = require('./util');
 let jsGeneric = require('./js-generic');
 let tmplCmd = require('./tmpl-cmd');
 let acorn = require('./js-acorn');
 let consts = require('./util-const');
 let tmplChecker = require('./checker-tmpl');
+let { magixSpliter } = require('./util-const');
 let removeTempReg = /[\x02\x01\x03\x06]\.?/g;
 let cmdReg = /\x07\d+\x07/g;
 let onlyCmdReg = /^(?:\x07\d+\x07)+$/;
-let dOutCmdReg = /<%([=@])([\s\S]+?)%>/g;
-let unsupportOutCmdReg = /<%@[\s\S]+?%>/g;
+let dOutCmdReg = /<%([=#])([\s\S]+?)%>/g;
+let unsupportOutCmdReg = /<%#[\s\S]+?%>/g;
 let stringReg = /^['"]/;
-let magixHolder = '\x1e';
 let holder = '\x1f';
 let processQuot = (str, refTmplCommands, mxEvent, e, toSrc) => {
     str.replace(cmdReg, cm => {
         let cmd = refTmplCommands[cm];
         if (cmd) {
             cmd = cmd.replace(dOutCmdReg, (m, o, c) => {
-                if (o == '@' && !onlyCmdReg.test(str)) {
+                if (o == '#' && !onlyCmdReg.test(str)) {
                     let src = toSrc(str);
-                    slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('unsupport ' + src), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent));
+                    console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('unsupport ' + src), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent));
                 }
                 if (o == '=') {
                     return '<%=$eq(' + c + ')%>';
@@ -38,7 +37,7 @@ let processQuot = (str, refTmplCommands, mxEvent, e, toSrc) => {
         }
     });
 };
-let htmlQEntityReg = /(\\*)(&quot;?|&#x22;?|&#x27;?|&#34;?|&#39;?)/g;
+let htmlQEntityReg = /(\\*)(&quot;?|&#x22;?|&#x27;?|&#34;?|&#39;?|&apos;?)/g;
 let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
     let index = 0;
     let store = Object.create(null);
@@ -57,7 +56,7 @@ let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
     } catch (ex) {
         let origin = params.substring(1, params.length - 1).replace(cmdPHReg, m => store[m]).replace(cmdReg, m => refTmplCommands[m]);
         let src = toSrc(origin);
-        slog.ever(chalk.red('[MXC Error(tmpl-attr-mxevent)] encode mx-event params error'), 'origin', chalk.magenta(src), (src != origin ? 'translate to ' + chalk.magenta(origin) : ''), chalk.red('mx-event params with template syntax must be a legal object literal'), 'e.g.', chalk.magenta('{id:{{=id}},name:\'{{if gender==\'male\'}}David{{else}}Lily{{/if}}\'}'));
+        console.log(chalk.red('[MXC Error(tmpl-attr-mxevent)] encode mx-event params error'), 'origin', chalk.magenta(src), (src != origin ? 'translate to ' + chalk.magenta(origin) : ''), chalk.red('mx-event params with template syntax must be a legal object literal'), 'e.g.', chalk.magenta('{id:{{=id}},name:\'{{if gender==\'male\'}}David{{else}}Lily{{/if}}\'}'));
         throw ex;
     }
     let modifiers = [];
@@ -79,7 +78,7 @@ let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
                     .replace(cmdReg, m => refTmplCommands[m])
                     .replace(removeTempReg, '');
 
-                slog.ever(chalk.magenta(`[MXC Tip(tmpl-attr-mxevent)]`), chalk.red('beware!'), 'You should use', chalk.magenta(tip), 'instead of', chalk.magenta(tipRaw), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
+                console.log(chalk.magenta(`[MXC Tip(tmpl-attr-mxevent)]`), chalk.red('beware!'), 'You should use', chalk.magenta(tip), 'instead of', chalk.magenta(tipRaw), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
             }
             let eq = jsGeneric.escapeQ(replacement, q);
             replacement = replacement.replace(cmdPHReg, m => store[m]);
@@ -104,7 +103,7 @@ let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
                     cmd = tmplCmd.recover(cmd, refTmplCommands);
                     let modify = false;
                     cmd.replace(dOutCmdReg, (m, o) => {
-                        modify = o == '@';
+                        modify = o == '#';
                     });
                     if (modify) {
                         modifiers.push({
@@ -119,7 +118,7 @@ let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
                         if (oCmd) {
                             oCmd.replace(unsupportOutCmdReg, m => {
                                 m = m.replace(removeTempReg, '');
-                                slog.ever(chalk.red('[MXC Error(tmpl-attr-mxevent)] unsupport ' + m), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
+                                console.log(chalk.red('[MXC Error(tmpl-attr-mxevent)] unsupport ' + m), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
                             });
                         }
                     });
@@ -163,7 +162,8 @@ module.exports = (e, match, refTmplCommands, toSrc) => {
                     start++;
                 } while (c != '"' && c != '\'');
                 let rest = left.substring(start) + right;
-                return left.substring(0, start) + holder + magixHolder + rest;
+                //console.log(rest);
+                return left.substring(0, start) + holder + magixSpliter + rest;
             } else {
                 return m;
             }

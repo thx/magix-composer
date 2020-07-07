@@ -8,7 +8,6 @@ let fd = require('./util-fd');
 let jsContent = require('./js-content');
 let deps = require('./util-deps');
 let configs = require('./util-config');
-let slog = require('./util-log');
 //let cssChecker = require('./checker-css');
 //let { styleDependReg } = require('./util-const');
 //文件处理
@@ -34,8 +33,8 @@ let processFile = (from, to, inwatch) => { // d:\a\b.js  d:\c\d.js
                 promise.then(() => {
                     return jsContent.process(from, to, 0, inwatch);
                 }).then(e => {
-                    if (configs.log && inwatch) {
-                        slog.ever('[MXC Tip(js)] finish:', chalk.green(from));
+                    if (inwatch) {
+                        console.log('[MXC Tip(js)] finish:', chalk.green(from));
                     }
                     if (!e.isSnippet) {
                         to = to.replace(configs.jsFileExtNamesReg, m => {

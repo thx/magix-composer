@@ -5,8 +5,8 @@
 let cssnano = require('cssnano');
 let path = require('path');
 let configs = require('./util-config');
-let atpath = require('./util-atpath');
-let cssFileRead = require('./css-read');
+//let atpath = require('./util-atpath');
+let cssRead = require('./css-read');
 let deps = require('./util-deps');
 let cssChecker = require('./checker-css');
 let cssGlobal = require('./css-global');
@@ -34,6 +34,7 @@ let sep = path.sep;
 module.exports = e => {
     let globalNamesMap = Object.create(null);
     let globalVarsMap = Object.create(null);
+    let globalDeclaredFiles = Object.create(null);
     let cssContentCache = Object.create(null);
     configs.scopedCss.forEach(sc => {
         deps.addFileDepend(sc, e.from, e.to);
@@ -45,9 +46,13 @@ module.exports = e => {
         return new Promise((resolve, reject) => {
             cloneAssign(globalNamesMap, gInfo.namesMap);
             cloneAssign(globalVarsMap, gInfo.varsMap);
+            cloneAssign(globalDeclaredFiles, gInfo.declaredFiles);
             e.cssNamesMap = globalNamesMap;
             e.cssVarsMap = globalVarsMap;
+            e.declaredFiles = globalDeclaredFiles;
+
             styleInJSFileReg.lastIndex = 0;
+            //debugger;
             if (styleInJSFileReg.test(e.content)) { //有需要处理的@规则
                 styleInJSFileReg.lastIndex = 0;
                 let count = 0;
@@ -113,11 +118,12 @@ module.exports = e => {
                                 return m;
                             } else {
                                 let { isGlobal, key: k2 } = cssTransform.processVar(key);
+                                //console.log(lf,key,k2,m);
                                 if (isGlobal) {
                                     r = k2;
                                     cssChecker.storeStyleGlobalVars(lf, key);
                                 } else {
-                                    cssChecker.storeStyleGlobalVars(lf, key);
+                                    //cssChecker.storeStyleGlobalVars(lf, key);
                                     return m;
                                 }
                             }
@@ -145,7 +151,7 @@ module.exports = e => {
                             m = name + ext;
                             cssChecker.storeUnexist(e.from, m);
                             if (key) {
-                                return (q || '') + `unfound file:${name}${ext}` + (q || '') + (tail || '');
+                                return (left || '') + (q || '') + `unfound file:${name}${ext}` + (q || '') + (right || '') + (tail || '');
                             }
                             return [(left || '') + '\'$throw_' + name + ext + '\'', q + 'unfound style file:' + name + ext + q + (right || '')];
                         }
@@ -186,7 +192,14 @@ module.exports = e => {
                                     selectors: newContent.selectors,
                                     tagsOrAttrs: newContent.tagsOrAttrs
                                 });
+                                for (let v in newContent.vars) {
+                                    globalDeclaredFiles.vars[v] = file;
+                                }
+                                for (let s in newContent.selectors) {
+                                    globalDeclaredFiles.selectors[s] = file;
+                                }
                                 fileContent = newContent.content;
+                                //debugger;
                                 r.namesMap = cssNamesMap;
                                 r.varsMap = cssVarsMap;
                                 r.fileContent = fileContent;
@@ -311,13 +324,12 @@ module.exports = e => {
                         scopedStyle = true;
                         shortCssFile = file;
                     } else {
-                        name = atpath.resolveName(name, e.moduleId); //先处理名称
                         if (refInnerStyle) {
                             file = e.from;
                         } else {
                             e.fileDeps[file] = 1;
                         }
-                        shortCssFile = file.replace(configs.moduleIdRemovedPath, '').substring(1);
+                        shortCssFile = file.replace(configs.commonFolder, '').substring(1);
                     }
                     tempMatchToFile[match] = {
                         scopedStyle,
@@ -334,7 +346,7 @@ module.exports = e => {
                                 styles: gInfo.styles
                             });
                         } else {
-                            promise = cssFileRead(file, e, match, ext, refInnerStyle);
+                            promise = cssRead(file, e, match, ext, refInnerStyle);
                         }
                         promise.then(info => {
                             //写入缓存，因为同一个view.js中可能对同一个css文件多次引用
@@ -384,7 +396,6 @@ module.exports = e => {
                 e.content.replace(styleInJSFileReg, (m, left, q, prefix, name, ext, key, right) => {
                     if ((key || prefix) ||
                         (left == '(' && right == ')')) {
-                        name = atpath.resolveName(name, e.moduleId);
                         let file = path.resolve(folder + sep + name + ext);
                         if (configs.scopedCssMap[file]) {
                             name = 'scoped';

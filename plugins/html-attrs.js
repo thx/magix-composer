@@ -74,10 +74,10 @@ let tagsProps = {
     input: {
         value: 'value'
     },
-    'input:checkbox': {
+    'input&checkbox': {
         checked: 'checked'
     },
-    'input:radio': {
+    'input&radio': {
         checked: 'checked'
     },
     option: {
@@ -93,22 +93,35 @@ let tagsAcceptUserInput = {
     textarea: 1,
     option: 1
 };
+let escapeReg = /[<>"']/g;
+let escapeMap = {
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    '\'': '&#27;'
+};
+
+let escapeSlashRegExp = /\\|'/g;
+let lineBreakReg = /\r\n?|\n|\u2028|\u2029/g;
+let escapeProcessor = m => escapeMap[m] || m;
 module.exports = {
     getInputTags() {
         return tagsAcceptUserInput;
     },
+    escapeSlashAndBreak(attr) {
+        return attr.replace(escapeSlashRegExp, '\\$&').replace(lineBreakReg, '\\n')
+    },
+    escapeAttr(attr) {
+        return attr.replace(escapeReg, escapeProcessor).replace(lineBreakReg, '\\n');
+    },
     getProps(tag, type) {
         let all = Object.assign({}, tagsProps['*']);
-        let tagAndType = `${tag}:${type}`;
+        let tagAndType = `${tag}&${type}`;
         let props = tagsProps[tagAndType];
         if (props) {
             all = Object.assign(all, props);
         } else {
             let tags = tagsProps[tag];
-            if (tags) {
-                all = Object.assign(all, tags);
-            }
-            tags = tagsProps[tag + '&' + type];
             if (tags) {
                 all = Object.assign(all, tags);
             }

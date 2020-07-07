@@ -80,9 +80,10 @@ let processMx = (content, shortFrom) => {
 module.exports = {
     process(from) {
         return new Promise(resolve => {
-            if (configs.tmplFileExtNamesReg.test(from)) {
+            if (configs.tmplFileExtNamesReg.test(from) ||
+                mxTailReg.test(from)) {
                 let content = fd.read(from);
-                let shortFrom = from.replace(configs.moduleIdRemovedPath, '');
+                let shortFrom = from.replace(configs.commonFolder, '');
                 if (mxTailReg.test(from)) {
                     let mxContent = processMx(content, shortFrom);
                     if (content != mxContent) {

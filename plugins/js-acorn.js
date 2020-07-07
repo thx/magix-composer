@@ -3,8 +3,6 @@ acorn lib
  */
 let acorn = require('acorn');
 let walker = require('acorn-walk');
-let importMeta = require('acorn-import-meta');
-acorn = acorn.Parser.extend(importMeta);
 module.exports = {
     parse(tmpl, comments, sourceFile) {
         return acorn.parse(tmpl, {

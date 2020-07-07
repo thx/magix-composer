@@ -1,7 +1,7 @@
 /*
     http://www.w3school.com.cn/cssref/css_selectors.asp
     简易parser，只处理类与标签，其中
-    processRules 参考了这个：https://github.com/fb55/css-what/blob/master/index.js
+    processRules 参考了这个：https://github.com/fb55/css-what/
     思路：跳过不必要处理的css，在处理规则时，跳过{ }
  */
 let configs = require('./util-config');
@@ -22,6 +22,7 @@ let atRuleSearchContent = {
 let atRuleIgnoreContent = {
     page: 1,
     global: 1,
+    property: 1,
     '-webkit-keyframes': 1,
     '-moz-keyframes': 1,
     '-ms-keyframes': 1,
@@ -66,6 +67,8 @@ let parse = (css, file, refAtRules) => {
     let vars = [];
     let nests = [];
     let nestsLocker = Object.create(null);
+    let selectors = [];
+    let selectorTokensIndex = 0;
     let current = 0;
     let max = css.length;
     let c;
@@ -178,19 +181,43 @@ let parse = (css, file, refAtRules) => {
             }
         }
     };
-    let takeVars = (start, end) => {
-        //console.log(tokens);
+    let processSelectorRules = (start, end) => {
+        let ss = [];
+        let sRules = [];
+        let currentRule = {},
+            prevRule = currentRule;
+        while (selectorTokensIndex < tokens.length) {
+            ss.push(tokens[selectorTokensIndex++]);
+        }
         let rules = css.substring(start, end);
+        //console.log(rules);
         let inName = true;
-        let idx = 0;
+        let idx = 0, last = 0;
         while (idx < rules.length) {
             let c = rules[idx];
             if (c == ';' ||
                 c == '\r' ||
                 c == '\n') {
+                let value = rules.substring(last, idx).trim();
+                if (value) {
+                    if (!currentRule.key) {
+                        prevRule.value += value;
+                    } else {
+                        currentRule.value = value;
+                        sRules.push(currentRule);
+                        prevRule = currentRule;
+                    }
+                    currentRule = {};
+                }
                 inName = true;
+                last = idx + 1;
             } else if (c == ':') {
+                let key = rules.substring(last, idx).trim();
+                if (key) {
+                    currentRule.key = key;
+                }
                 inName = false;
+                last = idx + 1;
             } else {
                 if (inName &&
                     c == '-' &&
@@ -217,6 +244,21 @@ let parse = (css, file, refAtRules) => {
             }
             idx++;
         }
+        let value = rules.substring(last, idx).trim();
+        if (value) {
+            if (!prevRule.key) {
+                prevRule.value += value;
+            } else {
+                currentRule.value = value;
+                sRules.push(currentRule);
+            }
+        }
+        selectors.push({
+            selectors: ss,
+            ruleStart: start,
+            ruleEnd: end,
+            rules: sRules
+        });
     };
     let processRules = () => {
         let prev = '',
@@ -242,7 +284,7 @@ let parse = (css, file, refAtRules) => {
                 current++;
                 let ti = css.indexOf('}', current);
                 if (ti != -1) {
-                    takeVars(current, ti);
+                    processSelectorRules(current, ti);
                     current = ti;
                 } else {
                     throw {
@@ -289,7 +331,7 @@ let parse = (css, file, refAtRules) => {
                     type: 'attr',
                     name: matches[1],
                     start: current - 1,
-                    first: !prev,
+                    //first: !prev,
                     ctrl: matches[2],
                     quote: matches[3] || '',
                     end: current + matches[0].length,
@@ -399,10 +441,12 @@ let parse = (css, file, refAtRules) => {
             processRules();
         }
     }
+    //console.log(JSON.stringify(selectors));
     return {
         vars,
         tokens,
-        nests
+        nests,
+        selectors
     };
 };
 module.exports = (css, file, refAtRules) => {

@@ -1,6 +1,7 @@
 let cssChecker = require('./checker-css');
+let { selfCssRefReg } = require('./util-const');
 let pureNumReg = /^\d+$/;
-let selfCssReg = /@\$\(\.([\w\-]+)\)/g;
+
 module.exports = (tmpl, e) => {
     let selfCssClass = (m, key) => {
         if (pureNumReg.test(key)) return m;
@@ -22,5 +23,5 @@ module.exports = (tmpl, e) => {
         }
         return r || key;
     };
-    return tmpl.replace(selfCssReg, selfCssClass);
+    return tmpl.replace(selfCssRefReg, selfCssClass);
 };
