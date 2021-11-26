@@ -2,17 +2,16 @@
     样式处理入口
     读取js代码中的样式占位规则，把占位规则处理成真实的内容
  */
-let cssnano = require('cssnano');
+let cssClean = require('./css-clean');
 let path = require('path');
 let configs = require('./util-config');
-let atpath = require('./util-atpath');
-let cssFileRead = require('./css-read');
+//let atpath = require('./util-atpath');
+let cssRead = require('./css-read');
 let deps = require('./util-deps');
 let cssChecker = require('./checker-css');
 let cssGlobal = require('./css-global');
 let cssComment = require('./css-comment');
-let utils = require('./util');
-let cloneAssign = utils.cloneAssign;
+let { cloneAssign } = require('./util');
 let cssTransform = require('./css-transform');
 let {
     styleInJSFileReg,
@@ -24,16 +23,19 @@ let {
 //https://github.com/Automattic/xgettext-js
 //处理js文件中如 'global@x.less' '@x.less:selector' 'ref@../x.scss' 等各种情况
 //"abc(@style.css:xx)yyzz"
-//[ref="@../default.css:inmain"] .open{
+//["ref@:../default.css:inmain"] .open{
 //    color:red
 //}
 let cssVarReg = /var\s*\(\s*([^)\s]+)\s*(?=[,)])/g;
+let cssAtRefReg = /(['"])\s*ref@:([^:]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):@(font-face|keyframes)\(([\s\S]+?)\)\1/g;
+let cssCommonRefReg = /(['"])\s*ref@:([^:]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style)#([\s\S]+?)\1/g;
 let sep = path.sep;
-
 
 module.exports = e => {
     let globalNamesMap = Object.create(null);
     let globalVarsMap = Object.create(null);
+    let globalDeclaredFiles = Object.create(null);
+    let globalAtRules = Object.create(null);
     let cssContentCache = Object.create(null);
     configs.scopedCss.forEach(sc => {
         deps.addFileDepend(sc, e.from, e.to);
@@ -45,17 +47,23 @@ module.exports = e => {
         return new Promise((resolve, reject) => {
             cloneAssign(globalNamesMap, gInfo.namesMap);
             cloneAssign(globalVarsMap, gInfo.varsMap);
+            cloneAssign(globalDeclaredFiles, gInfo.declaredFiles);
+            cloneAssign(globalAtRules, gInfo.atRules);
             e.cssNamesMap = globalNamesMap;
             e.cssVarsMap = globalVarsMap;
+            e.cssAtRules = globalAtRules;
+            e.declaredFiles = globalDeclaredFiles;
+
             styleInJSFileReg.lastIndex = 0;
+            //debugger;
             if (styleInJSFileReg.test(e.content)) { //有需要处理的@规则
                 styleInJSFileReg.lastIndex = 0;
                 let count = 0;
                 let tempMatchToFile = Object.create(null);
                 let folder = path.dirname(e.from);
-                let storeHostUsed = (scoped, file, selectors, vars, varsIsGlobal) => {
+                let storeHostUsed = (type, scoped, file, selectors, varsIsGlobal) => {
                     if (scoped) {
-                        if (selectors) {
+                        if (type == 'selectors') {
                             let dest = gInfo.declaredFiles.selectors[selectors];
                             if (dest) {
                                 cssChecker.storeHostUsed(e.from, dest, {
@@ -63,36 +71,49 @@ module.exports = e => {
                                         [selectors]: 1
                                     }
                                 });
-                            } else {
+                            } /*else {
                                 cssChecker.storeUnexist(e.from, 'selectors ' + selectors + ' from scoped.style');
-                            }
+                            }*/
                         }
-                        if (vars) {
+                        if (type == 'vars') {
                             if (varsIsGlobal) {
-                                cssChecker.storeStyleGlobalVars(e.from, vars);
+                                cssChecker.storeStyleGlobalVars(e.from, selectors);
                             } else {
-                                let dest = gInfo.declaredFiles.vars[s];
+                                let dest = gInfo.declaredFiles.vars[selectors];
                                 if (dest) {
                                     cssChecker.storeHostUsed(e.from, dest, {
                                         vars: {
-                                            [s]: 1
+                                            [selectors]: 1
                                         }
                                     });
-                                } else {
-                                    cssChecker.storeUnexist(e.from, 'vars ' + s + ' from scoped.style');
-                                }
+                                } /*else {
+                                    cssChecker.storeUnexist(e.from, 'vars ' + selectors + ' from scoped.style');
+                                }*/
                             }
+                        }
+                        if (type == 'atRules') {
+                            let dest = gInfo.declaredFiles.atRules[selectors];
+                            cssChecker.storeHostUsed(e.from, dest, {
+                                atRules: {
+                                    [selectors]: 1
+                                }
+                            });
                         }
                     } else {
                         let temp = {};
-                        if (selectors) {
+                        if (type == 'selectors') {
                             temp.selectors = {
                                 [selectors]: 1
                             };
                         }
-                        if (vars) {
+                        if (type == 'vars') {
                             temp.vars = {
-                                [vars]: 1
+                                [selectors]: 1
+                            };
+                        }
+                        if (type == 'atRules') {
+                            temp.atRules = {
+                                [selectors]: 1
                             };
                         }
                         cssChecker.storeHostUsed(e.from, file, temp);
@@ -101,19 +122,21 @@ module.exports = e => {
                 let processVars = (c, f, lf) => {
                     return c.replace(cssVarReg, (m, key) => {
                         let r = globalVarsMap[key];
+                        //console.log(m,key);
                         if (!r) {
                             if (cssVarRefReg.test(key)) {
                                 while (cssVarRefReg.test(m)) {
                                     m = m.replace(cssVarRefReg, (_1, _2, fn, ext, key) => {
                                         return cssTransform.varRefProcessor(lf, fn, ext, key, {
-                                            globalCssVarsMap: gInfo.varsMap
+                                            origin: m,
+                                            globalCssVarsMap: gInfo.varsMap,
+                                            globalCssDeclaredFiles: gInfo.declaredFiles
                                         });
                                     });
                                 }
-                                return m;
+                                return cssTransform.recoverAtReg(m);
                             } else {
                                 let { isGlobal, key: k2 } = cssTransform.processVar(key);
-                                //console.log(lf,key,k2,m);
                                 if (isGlobal) {
                                     r = k2;
                                     cssChecker.storeStyleGlobalVars(lf, key);
@@ -122,8 +145,30 @@ module.exports = e => {
                                     return m;
                                 }
                             }
+                        } else {
+                            cssChecker.storeStyleUsed(lf, lf, {
+                                vars: {
+                                    [key]: r
+                                }
+                            })
                         }
                         return `var(${r}`;
+                    });
+                };
+                let processAtRefRules = (c, f, lf) => {
+                    //console.log(c);
+                    return c.replace(cssAtRefReg, (_, q, relateFile, ext, prefix, atRule) => {
+                        return cssTransform.recoverAtReg(cssTransform.atRuleRefProcessor(lf, relateFile, ext, atRule, {
+                            origin: _,
+                            atPrefix: prefix,
+                            globalCssAtRules: gInfo.atRules,
+                            globalCssDeclaredFiles: gInfo.declaredFiles
+                        }));
+                    });
+                };
+                let processCommonStringRef = (c, f, lf) => {
+                    return c.replace(cssCommonRefReg, (_, q, relateFile, ext, rule) => {
+                        return cssTransform.commonStringRefProcessor(lf, relateFile, ext, rule);
                     });
                 };
                 let resume = () => {
@@ -146,7 +191,7 @@ module.exports = e => {
                             m = name + ext;
                             cssChecker.storeUnexist(e.from, m);
                             if (key) {
-                                return (q || '') + `unfound file:${name}${ext}` + (q || '') + (tail || '');
+                                return (left || '') + (q || '') + `unfound file:${name}${ext}` + (q || '') + (right || '') + (tail || '');
                             }
                             return [(left || '') + '\'$throw_' + name + ext + '\'', q + 'unfound style file:' + name + ext + q + (right || '')];
                         }
@@ -155,10 +200,13 @@ module.exports = e => {
                         let cssNamesMap,
                             cssVarsMap,
                             newContent,
-                            addToGlobalCSS;
+                            addToGlobalCSS,
+                            atRules;
+                        //console.log(m, scopedStyle);
                         if (scopedStyle) {
                             cssNamesMap = globalNamesMap;
                             cssVarsMap = globalVarsMap;
+                            atRules = globalAtRules;
                         } else {
                             addToGlobalCSS = key ? false : true; //有后缀时也不添加到全局
                             if (!r.namesMap) {
@@ -177,32 +225,45 @@ module.exports = e => {
                                         file,
                                         namesKey: cssNamesKey,
                                         namesMap: cssNamesMap,
-                                        varsMap: cssVarsMap
+                                        varsMap: cssVarsMap,
+                                        atRules
                                     });
                                 } catch (ex) {
                                     reject(ex);
                                 }
+                                atRules = newContent.atRules;
                                 cssChecker.storeStyleDeclared(file, {
                                     vars: newContent.vars,
                                     selectors: newContent.selectors,
-                                    tagsOrAttrs: newContent.tagsOrAttrs
+                                    tagsOrAttrs: newContent.tagsOrAttrs,
+                                    atRules: atRules
                                 });
+                                for (let v in newContent.vars) {
+                                    globalDeclaredFiles.vars[v] = file;
+                                }
+                                for (let s in newContent.selectors) {
+                                    globalDeclaredFiles.selectors[s] = file;
+                                }
+                                for (let a in atRules) {
+                                    globalDeclaredFiles.atRules[a] = file;
+                                }
                                 fileContent = newContent.content;
+                                //debugger;
                                 r.namesMap = cssNamesMap;
                                 r.varsMap = cssVarsMap;
                                 r.fileContent = fileContent;
-                                if (addToGlobalCSS) {
-                                    cloneAssign(globalNamesMap, cssNamesMap);
-                                    cloneAssign(globalVarsMap, cssVarsMap);
-                                }
+                                r.atRules = atRules;
                             } else {
                                 cssNamesMap = r.namesMap;
                                 cssVarsMap = r.varsMap;
+                                atRules = r.atRules;
                                 fileContent = r.fileContent;
-                                if (addToGlobalCSS) {
-                                    cloneAssign(globalNamesMap, cssNamesMap);
-                                    cloneAssign(globalVarsMap, cssVarsMap);
-                                }
+                            }
+                            //console.log('----', atRules);
+                            if (addToGlobalCSS) {
+                                cloneAssign(globalNamesMap, cssNamesMap);
+                                cloneAssign(globalVarsMap, cssVarsMap);
+                                cloneAssign(globalAtRules, atRules);
                             }
                         }
                         let replacement;
@@ -211,7 +272,11 @@ module.exports = e => {
                             tail = '';
                         } else if (key) { //仅读取文件中的某个名称
                             let c;
-                            if (key.startsWith('--')) {
+                            cssVarReg.lastIndex = 0;
+                            if (cssVarReg.test(key)) {
+                                cssVarReg.lastIndex = 0;
+                                key = key.trim().slice(4, -1);
+                                let silent = false;
                                 let { isGlobal, key: k2 } = cssTransform.processVar(key);
                                 if (isGlobal) {
                                     c = k2;
@@ -219,23 +284,49 @@ module.exports = e => {
                                     c = cssVarsMap[key];
                                     if (!c) {
                                         if (configs.selectorSilentErrorCss) {
-                                            c = key;
+                                            silent = true;
+                                            c = `${prefix || ''}@:${name}${ext}:${key}`;
                                         } else {
                                             c = 'unfound-[' + key + ']-from-' + fileName;
                                         }
                                     }
                                 }
-                                storeHostUsed(scopedStyle, file, null, key, isGlobal);
+                                if (!silent) {
+                                    storeHostUsed('vars', scopedStyle, file, key, isGlobal);
+                                }
+                            } else if (key.startsWith('@font-face(') ||
+                                key.startsWith('@keyframes(')) {
+                                let sub = key.slice(11, -1);
+                                let pfx = key.slice(0, 10);
+                                let selector = `${pfx} ${sub}`;
+                                let silent = false;
+                                if (atRules[selector]) {
+                                    c = atRules[selector];
+                                } else {
+                                    if (configs.selectorSilentErrorCss) {
+                                        silent = true;
+                                        c = `${prefix || ''}@:${name}${ext}:${key}`;
+                                    } else {
+                                        c = 'unfound-at-rules-[' + key + ']-from-' + fileName;
+                                    }
+                                }
+                                if (!silent) {
+                                    storeHostUsed('atRules', scopedStyle, file, selector);
+                                }
                             } else {
                                 c = cssNamesMap[key];
+                                let silent = false;
                                 if (!c) {
                                     if (configs.selectorSilentErrorCss) {
-                                        c = key;
+                                        silent = true;
+                                        c = `${prefix || ''}@:${name}${ext}:${key}`;
                                     } else {
                                         c = 'unfound-[' + key + ']-from-' + fileName;
                                     }
                                 }
-                                storeHostUsed(scopedStyle, file, key);
+                                if (!silent) {
+                                    storeHostUsed('selectors', scopedStyle, file, key);
+                                }
                             }
                             replacement = q + c + q;
                         } else { //输出整个css文件内容
@@ -247,29 +338,37 @@ module.exports = e => {
                                 if (r.map) {
                                     fileContent += r.map;
                                     fileContent = processVars(fileContent, shortCssFile, file);
+                                    fileContent = processAtRefRules(fileContent, shortCssFile, file);
+                                    fileContent = processCommonStringRef(fileContent, shortCssFile, file);
                                     let c = JSON.stringify(fileContent);
-                                    c = configs.applyStyleProcessor(c, shortCssFile, cssNamesKey, e);
+                                    c = configs.applyStyleProcessor(c, '"', shortCssFile, cssNamesKey, e);
                                     replacement = uniqueKey + c;
                                 } else if (r.styles) {
                                     replacement = '[';
                                     for (let s of r.styles) {
                                         s.css = processVars(s.css, s.short, s.file);
+                                        s.css = processAtRefRules(s.css, s.short, s.file);
+                                        s.css = processCommonStringRef(s.css, s.short, s.file);
                                         let c = JSON.stringify(s.css + (s.map || ''));
-                                        c = configs.applyStyleProcessor(c, s.short, s.key, e);
+                                        c = configs.applyStyleProcessor(c, '"', s.short, s.key, e);
                                         replacement += JSON.stringify(s.key) + ',' + c + ',';
                                     }
                                     replacement = replacement.slice(0, -1);
                                     replacement += ']';
                                 } else {
                                     fileContent = processVars(fileContent, shortCssFile, file);
+                                    fileContent = processAtRefRules(fileContent, shortCssFile, file);
+                                    fileContent = processCommonStringRef(fileContent, shortCssFile, file);
                                     let c = JSON.stringify(fileContent);
-                                    c = configs.applyStyleProcessor(c, shortCssFile, cssNamesKey, e);
+                                    c = configs.applyStyleProcessor(c, '"', shortCssFile, cssNamesKey, e);
                                     replacement = uniqueKey + c;
                                 }
                             } else {
                                 fileContent = processVars(fileContent, shortCssFile, file);
+                                fileContent = processAtRefRules(fileContent, shortCssFile, file);
+                                fileContent = processCommonStringRef(fileContent, shortCssFile, file);
                                 let c = JSON.stringify(fileContent);
-                                c = configs.applyStyleProcessor(c, shortCssFile, cssNamesKey, e);
+                                c = configs.applyStyleProcessor(c, '"', shortCssFile, cssNamesKey, e);
                                 replacement = uniqueKey + c;
                             }
                         }
@@ -312,13 +411,12 @@ module.exports = e => {
                         scopedStyle = true;
                         shortCssFile = file;
                     } else {
-                        name = atpath.resolveName(name, e.moduleId); //先处理名称
                         if (refInnerStyle) {
                             file = e.from;
                         } else {
                             e.fileDeps[file] = 1;
                         }
-                        shortCssFile = file.replace(configs.moduleIdRemovedPath, '').substring(1);
+                        shortCssFile = file.replace(configs.commonFolder, '').substring(1);
                     }
                     tempMatchToFile[match] = {
                         scopedStyle,
@@ -335,7 +433,7 @@ module.exports = e => {
                                 styles: gInfo.styles
                             });
                         } else {
-                            promise = cssFileRead(file, e, match, ext, refInnerStyle);
+                            promise = cssRead(file, e, match, ext, refInnerStyle);
                         }
                         promise.then(info => {
                             //写入缓存，因为同一个view.js中可能对同一个css文件多次引用
@@ -347,17 +445,21 @@ module.exports = e => {
                                 cssContentCache[file].map = info.map;
                                 cssContentCache[file].styles = info.styles;
                                 if (!configs.debug) {
-                                    cssnano.process(info.content,
-                                        Object.assign({}, configs.cssnano)
-                                    ).then(r => {
-                                        setFileCSS(file, shortCssFile, r.css);
-                                    }, error => {
-                                        if (e.contentInfo) {
-                                            file += '@' + e.contentInfo.fileName;
-                                        }
-                                        reject(error);
-                                        check();
-                                    });
+                                    let content = cssClean.minify(info.content);
+                                    setFileCSS(file, shortCssFile, content);
+                                    //console.log('before',info.content);
+                                    // cssnano().process(info.content,
+                                    //     Object.assign({}, configs.cssnano)
+                                    // ).then(r => {
+                                    //     //console.log('after',r.css);
+                                    //     setFileCSS(file, shortCssFile, r.css);
+                                    // }, error => {
+                                    //     if (e.contentInfo) {
+                                    //         file += '@' + e.contentInfo.fileName;
+                                    //     }
+                                    //     reject(error);
+                                    //     check();
+                                    // });
                                 } else {
                                     let cssStr = info.content;
                                     cssStr = cssComment.clean(cssStr);
@@ -366,7 +468,10 @@ module.exports = e => {
                             } else {
                                 check();
                             }
-                        }).catch(reject);
+                        }).catch(ex => {
+                            delete cssContentCache[file];
+                            reject(ex);
+                        });
                     } else {
                         check();
                     }
@@ -382,11 +487,28 @@ module.exports = e => {
                         resume();
                     }
                 };
+
+                e.content = e.content.replace(styleInJSFileReg, (m, left, q, prefix, name, ext, key, right, tail) => {
+                    if (key) {
+                        key = key.trim();
+                        if (!prefix &&
+                            key.startsWith('{') &&
+                            key.endsWith('}')) {
+                            let parts = key.slice(1, -1).split(',');
+                            let p = '\x12@:' + name + ext;
+                            let returned = '';
+                            for (let part of parts) {
+                                returned += p + ':' + part + ' ';
+                            }
+                            returned = returned.slice(0, -1);
+                            return [left, q, returned, q, right, tail].join('');
+                        }
+                    }
+                    return m;
+                });
                 e.content.replace(styleInJSFileReg, (m, left, q, prefix, name, ext, key, right) => {
                     if ((key || prefix) ||
                         (left == '(' && right == ')')) {
-                        //console.log(name);
-                        name = atpath.resolveName(name, e.moduleId);
                         let file = path.resolve(folder + sep + name + ext);
                         if (configs.scopedCssMap[file]) {
                             name = 'scoped';

@@ -1,26 +1,52 @@
 let cssChecker = require('./checker-css');
+let { selfCssRefReg } = require('./util-const');
+let configs = require('./util-config');
 let pureNumReg = /^\d+$/;
-let selfCssReg = /@\$\(\.([\w\-]+)\)/g;
+
 module.exports = (tmpl, e) => {
-    let selfCssClass = (m, key) => {
+    let selfCssClass = (m, prefix, key) => {
         if (pureNumReg.test(key)) return m;
         let r;
+        if (prefix == '@keyframes' ||
+            prefix == '@font-face') {
+            let selector = `${prefix} ${key}`;
+            let dest = e.declaredFiles.atRules[selector];
+            if (dest) {
+                cssChecker.storeTemplateUsed(e.srcHTMLFile, {
+                    atRules: {
+                        [selector]: 1
+                    }
+                });
+                return e.cssAtRules[selector];
+            } else if (configs.selectorSilentErrorCss) {
+                return m;
+            } else {
+                cssChecker.storeUnexist(e.srcHTMLFile, selector);
+            }
+            return m;
+        }
         if (key.startsWith('--')) {
             r = e.cssVarsMap[key];
-            cssChecker.storeTemplateUsed(e.srcHTMLFile, {
-                vars: {
-                    [key]: 1
-                }
-            });
+            if (r ||
+                !configs.selectorSilentErrorCss) {
+                cssChecker.storeTemplateUsed(e.srcHTMLFile, {
+                    vars: {
+                        [key]: 1
+                    }
+                });
+            }
         } else {
             r = e.cssNamesMap[key];
-            cssChecker.storeTemplateUsed(e.srcHTMLFile, {
-                selectors: {
-                    [key]: 1
-                }
-            });
+            if (r ||
+                !configs.selectorSilentErrorCss) {
+                cssChecker.storeTemplateUsed(e.srcHTMLFile, {
+                    selectors: {
+                        [key]: 1
+                    }
+                });
+            }
         }
         return r || key;
     };
-    return tmpl.replace(selfCssReg, selfCssClass);
+    return tmpl.replace(selfCssRefReg, selfCssClass);
 };

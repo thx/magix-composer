@@ -7,27 +7,38 @@ let chalk = require('chalk');
 let tmplCmd = require('./tmpl-cmd');
 let configs = require('./util-config');
 let utils = require('./util');
-let slog = require('./util-log');
 let md5 = require('./util-md5');
 let jsGeneric = require('./js-generic');
+let htmlAttrs = require('./html-attrs');
 let {
     htmlAttrParamPrefix,
     revisableReg,
     tmplMxViewParamKey,
     tmplCondPrefix,
     tmplVarTempKey,
-    tmplGlobalVars
+    tmplGroupKeyAttr,
+    tmplGroupTag,
+    tmplGroupRootAttr,
+    tmplGlobalVars,
+    quickGroupObjectPrefix,
+    quickGroupObjectPrefix1,
+    revisableTail
 } = require('./util-const');
 let regexp = require('./util-rcache');
-let tmplCmdReg = /<%([@=!:&*~]|\.{3})?([\s\S]*?)%>|$/g;
+let qblance = require('./tmpl-qblance');
+let tmplStaticVarsKey = 'tmpl_static_vars_key';
+let tmplCmdReg = /<%([#=:&*~!]|\.{3})?([\s\S]*?)%>|$/g;
 let tagReg = /<([^>\s\/\x07]+)([^>]*)>/g;
 let bindReg = /([^>\s\/=]+)\s*=\s*(["'])(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*\2/g;
 let bindReg2 = /\s*(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*/g;
 let textaraReg = /<textarea([^>]*)>([\s\S]*?)<\/textarea>/g;
+let groupKeyReg = new RegExp(`\\s${tmplGroupKeyAttr}="[^"]+"`);
+let groupContextReg = /\s+fn(?=\="([^"]+)"|\s|$)/;
 let mxViewAttrReg = /(?:\b|\s|^)mx-view\s*=\s*(['"])([\s\S]+?)\1/g;
 let checkboxReg = /(?:\b|\s|^)type\s*=\s*(['"])checkbox\1/;
 let indeterminateReg = /(?:\b|\s|^)indeterminate(?:\b|\s|=|$)/;
-let atRefOrAnalysePathExprReg = /<%([@~])([\s\S]+?)%>/g;
+//let supportLocalReg = /^\x01\d+[a-zA-Z0-9_]+$/;
+let atRefOrAnalysePathExprReg = /<%([#~!])([\s\S]+?)%>/g;
 let vphUse = String.fromCharCode(0x7528); //用
 let vphDcd = String.fromCharCode(0x58f0); //声
 let vphCst = String.fromCharCode(0x56fa); //固
@@ -35,6 +46,7 @@ let vphGlb = String.fromCharCode(0x5168); //全
 let vphAsg = String.fromCharCode(0x8d4b);
 let creg = /[\u7528\u58f0\u56fa\u5168\u8d4b]/g;
 let hreg = /([\x01\x02\x10])\d+/g;
+let supportAnalyseExprReg = /^[a-zA-Z0-9\.\-$\x01\x06\x03\x17\[\]_\'"\\]+$/;
 let stringReg = /^['"]/;
 let numIndexReg = /^\[(\d+)\]$/;
 let tailEmptyReg = /\+''$/;
@@ -42,6 +54,8 @@ let bindEventParamsReg = /^\s*"([^"]+)",/;
 let artCtrlsReg = /<%'\x17\d+\x11([^\x11]+)\x11\x17'%>(<%[\s\S]+?%>)/g;
 let stringHolderReg = /(['"])?(\x04\d+\x04)\1/g;
 let refKeyReg = /,'\x1e[#a-zA-Z0-9]+'$/;
+let globalTmplRootReg = /[\x03\x06]\./g;
+let namedOfRefData = /^<%#([\s\S]+),'\x1e[\s\S]+'%>$/;
 let cmap = {
     [vphUse]: '\x01',
     [vphDcd]: '\x02',
@@ -51,16 +65,16 @@ let cmap = {
 };
 let stripChar = str => str.replace(creg, m => cmap[m]);
 let stripNum = str => str.replace(hreg, '$1');
-let leftOuputReg = /\x18",/g;
-let rightOutputReg = /,\s*"/g;
-let numberReg1 = /^[+-]?\.\d+(?:E[+-]?\d+)?$/i;
-let numberReg2 = /^[+-]?(?:0x|0b|0o)[0-9a-f]+$/i;
-let numberReg3 = /^[+-]?\d+\.?\d*(?:E[+-]?\d+)?$/i;
-let numberReg4 = /^[+-]?\d+n$/;
-let numberReg5 = /^[+-]?BigInt\(\s*(['"`])?\s*(?:0x|0b|0o)?[0-9a-f]+n?\s*\1\s*\)$/i;
-
+let fnVariableReg = /\x18",([\s\S]+?),\s*"\s*(:)?/g;
+let stringReg1 = /^'[^']*'$/;
+let stringReg2 = /^"[^"]*"$/;
+let stringReg3 = /^`[^`]*`$/;
+let hasVar1 = /'\+/;
+let hasVar2 = /\+'/;
+let escapeSQ = str => str.replace(/['\\]/g, '\\$&');
 let efCache = Object.create(null);
-let extractFunctions = expr => { //获取绑定的其它附加信息，如 <%:user.name<change,input>({refresh:true,required:true})%>  =>  evts:change,input  expr user.name  fns  {refresh:true,required:true}
+let extractFunctions = (expr) => { //获取绑定的其它附加信息，如 <%:user.name<change,input>({refresh:true,required:true})%>  =>  evts:change,input  expr user.name  fns  {refresh:true,required:true}
+
     let c = efCache[expr];
     if (c) {
         return c;
@@ -76,7 +90,20 @@ let extractFunctions = expr => { //获取绑定的其它附加信息，如 <%:us
     if (firstComma > -1) {
         fns = expr.substring(firstComma + 1).trim().slice(1, -1);
         expr = expr.substring(0, firstComma);
-        fns = fns.replace(leftOuputReg, '\'<%@').replace(rightOutputReg, '%>\'');
+        //console.log(JSON.stringify(fns));
+        fns = fns.replace(fnVariableReg, (m, v, colon) => {
+            if (colon) {
+                return `'<%=${v}%>'` + colon;
+            }
+            return `'<%#${v}%>'`;
+            //console.log(m, v);
+            // let key = `'\x1e#'`;
+            // if (v != '\x03') {
+            //     key = refVariable(v, oExpr, false, true);
+            // }
+            // return `'<%#${v},${key}%>'`;
+        });
+        //console.log(JSON.stringify(fns));
     }
     return (efCache[oExpr] = {
         expr,
@@ -98,6 +125,10 @@ let ExtractIds = v => {
     }
     return keys;
 };
+let globalAnchorReg = /[\x03\x06]/g;
+let declareReg = /\x01\d+/g;
+let ToValidExpr = str => str.replace(globalAnchorReg, 'xl')
+    .replace(declareReg, '');
 let SpreadPattern = (fn, node) => {
     //debugger;
     if (node.type == 'ArrayPattern' ||
@@ -148,6 +179,24 @@ let SpreadPattern = (fn, node) => {
                         p.value.type == 'ArrayPattern' ||
                         p.value.type == 'ArrayExpression') {
                         c += SpreadPattern(fn, p.value);
+                    } else if (p.value.type == 'AssignmentPattern') {
+                        let left = p.value.left,
+                            leftType = left.type,
+                            right = p.value.right,
+                            rightType = right.type;
+                        if (leftType == 'ObjectPattern' ||
+                            leftType == 'ObjectExpression') {
+                            c += SpreadPattern(fn, left);
+                        } else {
+                            c += fn.slice(left.start, left.end);
+                        }
+                        c += '=';
+                        if (rightType == 'ObjectPattern' ||
+                            rightType == 'ObjectExpression') {
+                            c += SpreadPattern(fn, right);
+                        } else {
+                            c += fn.slice(right.start, right.end);
+                        }
                     } else {
                         c += fn.slice(p.value.start, p.value.end);
                     }
@@ -163,7 +212,7 @@ let SpreadPattern = (fn, node) => {
 let PeelTempKeyPrefix = '$peel_key_';
 let PeelTempValuePrefix = '$peel_val_';
 let PeelTempRootPrefix = '$peel_root_';
-let PeelPatternVariable = (fn, node) => {
+let PeelPatternVariable = (fn, node, htmlFile) => {
     let a = [];
     let left, right, prefix = 'let ', spliter = ';';
     if (node.type == 'VariableDeclarator') {
@@ -208,6 +257,7 @@ let PeelPatternVariable = (fn, node) => {
                         }
                         a.push(`${p.value.name}=${host}${key}`, spliter);
                     } else if (p.value.type == 'AssignmentPattern') {
+                        console.log(chalk.magenta('avoid use AssignmentPattern at ObjectPattern of ' + fn.slice(p.value.start, p.value.end) + ' at file:' + htmlFile));
                         let key;
                         if (p.computed) {
                             key = `[${p.key.name}]`;
@@ -218,14 +268,25 @@ let PeelPatternVariable = (fn, node) => {
                         }
                         let v = p.value;
                         let left = v.left.name;
+                        let peelLeft = false;
+                        if (!left) {
+                            left = utils.uId(PeelTempKeyPrefix, fn, true);
+                            peelLeft = true;
+                        }
                         let right;
                         if (v.right.type == 'Literal') {
                             right = v.right.raw;
                         } else {
                             right = v.right.name;
+                            if (!right) {
+                                right = fn.slice(v.right.start, v.right.end);
+                            }
                         }
                         let tv = utils.uId(PeelTempValuePrefix, fn, true);
                         a.push(`${prefix}${tv}=${host}${key}${spliter}${left}=void 0===${tv}?${right}:${tv}`, spliter);
+                        if (peelLeft) {
+                            peel(v.left, left);
+                        }
                     }
                 } else {
                     //RestElement 简单实现
@@ -245,9 +306,13 @@ let PeelPatternVariable = (fn, node) => {
                         a.push(`${prefix}${k}=${host}[${idx}]`, spliter);
                         peel(p, k);
                     } else if (p.type == 'AssignmentPattern') {
+                        console.log(chalk.magenta('avoid use AssignmentPattern at ArrayPattern of ' + fn.slice(p.start, p.end) + ' at file:' + htmlFile));
                         let tv = utils.uId(PeelTempValuePrefix, fn, true);
                         let key = p.left.name;
                         let v = p.right.type == 'Literal' ? p.right.raw : p.right.name;
+                        if (!v) {
+                            v = fn.slice(p.right.start, p.right.end);
+                        }
                         a.push(`${prefix}${tv}=${host}[${idx}]${spliter}${key}=void 0===${tv}?${v}:${tv}`, spliter);
                     } else if (p.type == 'RestElement') {
                         a.push(`${p.argument.name}=${host}.slice(${idx})`, spliter);
@@ -269,6 +334,22 @@ let PeelPatternVariable = (fn, node) => {
     }
     return a.join('');
 };
+
+let isLiteralValue = v => {
+    if (v === 'true' ||
+        v === 'false' ||
+        v === 'null' ||
+        v === 'undefined') {
+        return true;
+    }
+    if (stringReg1.test(v) ||
+        stringReg2.test(v) ||
+        stringReg3.test(v)) {
+        return true;
+    }
+    return utils.isNumber(v);
+};
+
 /*
     \x00  `反撇
     \x01  模板中局部变量  用
@@ -289,7 +370,6 @@ let PeelPatternVariable = (fn, node) => {
  */
 module.exports = {
     process: (tmpl, e) => {
-        //console.log(tmpl);
         let sourceFile = e.shortHTMLFile;
         let fn = [];
         let index = 0;
@@ -311,12 +391,24 @@ module.exports = {
             });
             return src;
         };
-
+        //tmpl=`\x1f<span>\x1f</span>`+tmpl;
+        tmpl = tmpl.replace(tmplCmdReg, (m, o, c) => {
+            if (o === '#' ||
+                o === '=') {
+                c = c.trim();
+                if (c == '$viewId') {
+                    return '\x1f';
+                }
+            }
+            return m;
+        });
+        //console.log(tmpl);
         tmpl.replace(tmplCmdReg, (match, operate, content, offset) => {
             let start = 2;
             if (operate) {
                 start += operate.length;
-                if (content.trim()) {
+                content = content.trim();
+                if (content) {
                     content = '[' + content + ']';
                 }
             }
@@ -326,7 +418,10 @@ module.exports = {
             index = offset + match.length - 2;
             fn.push(';`' + key + '`;', content || '');
         });
+
+        //console.log(htmlStore);
         fn = fn.join(''); //移除<%%> 使用`变成标签模板分析
+        //console.log(JSON.stringify(fn));
         let ast;
         //console.log(fn);
         try {
@@ -345,7 +440,7 @@ module.exports = {
             if (msg.startsWith('[') && msg.endsWith(']')) {
                 msg = msg.substring(1, msg.length - 1);
             }
-            slog.ever(chalk.red('[MXC Error(tmpl-vars)] Parse template js code ast error: ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.red(msg));
+            console.log(chalk.red('[MXC Error(tmpl-vars)] parse template quick code ast error: ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.red(msg));
             throw ex;
         }
         /*
@@ -376,54 +471,66 @@ module.exports = {
         let constVars = Object.create(null);
         let patternChecker = (node, instead) => {
             let msg = '[MXC Error(tmpl-vars)] unpupport ' + node.type + ' near `' + toSourceHTML(fn.substring(node.start, node.end)) + '`';
-            slog.ever(chalk.red(msg), 'at', chalk.grey(sourceFile), (instead ? chalk.magenta(`use ${instead} instead`) : ''));
+            console.log(chalk.red(msg), 'at', chalk.grey(sourceFile), (instead ? chalk.magenta(`use ${instead} instead`) : ''));
             throw new Error(msg);
         };
         let pattersObject = Object.create(null);
-        let processExpressions = Object.create(null);
+        //let processExpressions = Object.create(null);
         let objectExpr = node => {
             let key = node.start + '~' + node.end;
-            let key1 = fn.slice(node.start, node.end);
-            let process = 0;
+            //let key1 = fn.slice(node.start, node.end);
+            //let process = 0;
             if (node.type == 'ObjectPattern' ||
-                node.type == 'ArrayPattern') {
-                processExpressions[key1] = 1;
-                process = 1;
-            } else {
-                process = processExpressions[key1];
-            }
-            if (!process) return;
-            pattersObject[key] = node;
-            if (node.type == 'ObjectPattern' ||
-                node.type == 'ObjectExpression') {
-                for (let p of node.properties) {
-                    if (p.type == 'Property') {
-                        if (p.value.type == 'ObjectPattern' ||
-                            p.value.type == 'ObjectExpression' ||
-                            p.value.type == 'ArrayPattern' ||
-                            p.value.type == 'ArrayExpression') {
-                            key = p.value.start + '~' + p.value.end;
-                            if (pattersObject[key]) {
-                                delete pattersObject[key];
-                            }
-                        }
+                node.type == 'ArrayPattern' ||
+                node.type == 'ObjectExpression' ||
+                node.type == 'ArrayExpression') {
+                for (let p in pattersObject) {
+                    let [start, end] = p.split('~');
+                    start = start | 0;
+                    end = end | 0;
+                    if (start > node.start &&
+                        end < node.end) {
+                        delete pattersObject[p];
                     }
                 }
-            } else {
-                for (let p of node.elements) {
-                    if (p) {
-                        if (p.type == 'ObjectPattern' ||
-                            p.type == 'ObjectExpression' ||
-                            p.type == 'ArrayPattern' ||
-                            p.type == 'ArrayExpression') {
-                            key = p.start + '~' + p.end;
-                            if (pattersObject[key]) {
-                                delete pattersObject[key];
-                            }
-                        }
-                    }
-                }
+                pattersObject[key] = node;
             }
+
+            // else {
+            //     process = processExpressions[key1];
+            // }
+            // if (!process) return;
+            // pattersObject[key] = node;
+            // if (node.type == 'ObjectPattern' ||
+            //     node.type == 'ObjectExpression') {
+            //     for (let p of node.properties) {
+            //         if (p.type == 'Property') {
+            //             if (p.value.type == 'ObjectPattern' ||
+            //                 p.value.type == 'ObjectExpression' ||
+            //                 p.value.type == 'ArrayPattern' ||
+            //                 p.value.type == 'ArrayExpression') {
+            //                 key = p.value.start + '~' + p.value.end;
+            //                 if (pattersObject[key]) {
+            //                     delete pattersObject[key];
+            //                 }
+            //             }
+            //         }
+            //     }
+            // } else {
+            //     for (let p of node.elements) {
+            //         if (p) {
+            //             if (p.type == 'ObjectPattern' ||
+            //                 p.type == 'ObjectExpression' ||
+            //                 p.type == 'ArrayPattern' ||
+            //                 p.type == 'ArrayExpression') {
+            //                 key = p.start + '~' + p.end;
+            //                 if (pattersObject[key]) {
+            //                     delete pattersObject[key];
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
         };
         acorn.walk(ast, {
             ForOfStatement: patternChecker,
@@ -445,7 +552,10 @@ module.exports = {
                 let callee = node.callee;
                 if (callee.name) { //只处理模板中 <%=fn(a,b)%> 这种，不处理<%=x.fn()%>，后者x对象上除了挂方法外，还有可能挂普通数据。对于方法我们不把它当做变量处理，因为给定同样的参数，方法需要返回同样的结果
                     vname = callee.name;
-                    constVars[vname] = 1;
+                    if (!vname.startsWith(quickGroupObjectPrefix) &&
+                        !vname.startsWith(quickGroupObjectPrefix1)) {
+                        constVars[vname] = 1;
+                    }
                 }
             },
             VariableDeclarator(node) {
@@ -455,12 +565,13 @@ module.exports = {
                         case 'ObjectExpression':
                         case 'FunctionExpression':
                         case 'ArrowFunctionExpression':
-                            slog.ever(chalk.red('[MXC Tip(tmpl-vars)] avoid declare ' + fn.substring(node.start, node.end)), 'at', chalk.grey(sourceFile));
+                            console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid declare ' + fn.substring(node.start, node.end)), 'at', chalk.grey(sourceFile));
                             break;
                     }
                 }
             }
         });
+        //debugger;
         for (let p in pattersObject) {
             let v = pattersObject[p];
             modifiers.push({
@@ -476,17 +587,18 @@ module.exports = {
                 fn = fn.substring(0, m.start) + m.content + fn.substring(m.end);
             }
             modifiers = [];
-            //console.log(fn);
+            //console.log(JSON.stringify(fn));
             ast = acorn.parse(fn, null, sourceFile);
         }
         acorn.walk(ast, {
             VariableDeclarator(node) {
                 if (node.id.type == 'ObjectPattern' ||
                     node.id.type == 'ArrayPattern') {
+                    //console.log('enter');
                     modifiers.push({
                         start: node.start,
                         end: node.end,
-                        content: PeelPatternVariable(fn, node)
+                        content: PeelPatternVariable(fn, node, e.shortHTMLFile)
                     });
                 }
             },
@@ -495,10 +607,11 @@ module.exports = {
                 if (expr.type == 'AssignmentExpression') {
                     if (expr.left.type == 'ObjectPattern' ||
                         expr.left.type == 'ArrayPattern') {
+                        //console.log('enter');
                         modifiers.push({
                             start: node.start,
                             end: node.end,
-                            content: PeelPatternVariable(fn, expr)
+                            content: PeelPatternVariable(fn, expr, e.shortHTMLFile)
                         });
                     }
                 }
@@ -511,7 +624,6 @@ module.exports = {
                 fn = fn.substring(0, m.start) + m.content + fn.substring(m.end);
             }
             modifiers = [];
-            //console.log(fn);
             ast = acorn.parse(fn, null, sourceFile);
         }
         let blockRanges = [];
@@ -564,9 +676,14 @@ module.exports = {
                 stringReg.test(node.raw)) {
                 let q = tl ? '' : node.raw.match(stringReg)[0];
                 let key = '\x04' + (stringIndex++) + '\x04';
-                if (revisableReg.test(node.raw) && !configs.debug) {
+                if (revisableReg.test(node.raw)) {
                     node.raw = node.raw.replace(revisableReg, m => {
-                        return md5(m, 'revisableString', configs.revisableStringPrefix);
+                        if (configs.debug) {
+                            return m.slice(0, -1) + revisableTail + '}';
+                        }
+                        let r = '\x12' + md5(m, 'revisableString', configs.revisableStringPrefix);
+                        e.revisableStrings.push(r);
+                        return r;
                     });
                 }
                 stringStore[key] = node.raw;
@@ -625,7 +742,7 @@ module.exports = {
                     let r = queryVarsByPos(node.start);
                     if (!r[lname]) {
                         //模板中使用如<%list=20%>这种，虽然可以，但是不建议使用，因为在模板中可以修改js中的数据，这是非常不推荐的
-                        slog.ever(chalk.red('[MXC Tip(tmpl-vars)] undeclare variable:' + lname), 'at', chalk.grey(sourceFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-vars)] undeclare variable:' + lname), 'at', chalk.grey(sourceFile));
                         globalVars[lname] = 1;
                     } else {
                         let left = node.left;
@@ -644,7 +761,7 @@ module.exports = {
                     let r = queryVarsByPos(node.start);
                     if (!r[start.name]) {
                         globalVars[start.name] = 1;
-                        slog.ever(chalk.red('[MXC Tip(tmpl-vars)] avoid writeback: ' + fn.slice(node.start, node.end)), 'at', chalk.grey(sourceFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid writeback: ' + fn.slice(node.start, node.end)), 'at', chalk.grey(sourceFile));
                     }
                 }
             },
@@ -652,7 +769,7 @@ module.exports = {
                 let tname = node.id.name;
                 if (globalVars[tname] || globalVars[tname]) {
                     let msg = '[MXC Error(tmpl-vars)] avoid redeclare variable:' + tname;
-                    slog.ever(chalk.red(msg), 'at', chalk.grey(sourceFile));
+                    console.log(chalk.red(msg), 'at', chalk.grey(sourceFile));
                     throw new Error(msg);
                 }
                 let r = queryRangeByPos(node.start);
@@ -684,7 +801,7 @@ module.exports = {
                 m = modifiers[i];
                 fn = fn.substring(0, m.start) + m.key + m.name + fn.substring(m.end);
             }
-            //console.log(fn);
+            //console.log(JSON.stringify(fn));
             ast = acorn.parse(fn, null, sourceFile);
         }
         let globalTracker = Object.create(null);
@@ -701,17 +818,20 @@ module.exports = {
                     let hasValue = false;
                     let value = null;
                     let type = '';
+                    let origin = '';
                     if (node.init) { //如果有赋值
                         hasValue = true;
                         let { init } = node;
                         type = init.type;
-                        value = stripChar(fn.substring(init.start, init.end));
+                        origin = fn.substring(init.start, init.end);
+                        value = stripChar(origin);
                     }
                     let r = queryRangeByPos(pos);
                     globalTracker[key].push({
                         pos,
                         start: r.start,
                         end: r.end,
+                        origin,
                         hasValue,
                         value,
                         type
@@ -719,6 +839,11 @@ module.exports = {
                 }
             },
             AssignmentExpression(node) {
+                if (!node.left.name) {
+                    let msg = '[MXC Error(tmpl-vars)] avoid assignment to object:' + recoverString(stripChar(stripNum(fn.slice(node.start, node.end)))).replace(globalTmplRootReg, '');
+                    console.log(chalk.red(msg), 'at', chalk.grey(sourceFile));
+                    throw new Error(msg);
+                }
                 let key = stripChar(node.left.name);
                 let m = key.match(/\x10(\d+)/);
                 if (m) {
@@ -757,6 +882,7 @@ module.exports = {
             }
         });
         fn = toSourceHTML(fn); //把合法的js代码转换成原来的模板代码
+        let shortHTMLUId = md5(e.shortHTMLFile, tmplStaticVarsKey);
         let cmdStore = Object.create(null);
         let getParentRefKey = (key, pos) => {
             let list = globalTracker[key];
@@ -769,7 +895,7 @@ module.exports = {
                     if (item.type == 'CallExpression') {
                         return null;
                     }
-                    return item.value;
+                    return item;
                 }
             }
             return null;
@@ -787,8 +913,16 @@ module.exports = {
             if (!srcExpr) {
                 srcExpr = expr;
             }
-            //slog.ever('expr', expr);
+            if (!supportAnalyseExprReg.test(expr) &&
+                prefix) {
+                return [prefix()];
+                // let currentExpr = toOriginalExpr(expr.trim());
+                // let usedByExpr = toOriginalExpr(srcExpr.trim());
+                // console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve complex expression: ' + currentExpr + ' used by ' + usedByExpr), 'at', chalk.grey(sourceFile));
+                return [expr];
+            }
             let ps = jsGeneric.splitExpr(expr);//表达式拆分，如user[name][key[value]]=>["user","[name]","[key[value]"]
+            //console.log(ps);
             /*
                 1. <%:user.name%>
                 2. <%var a=user.name%>...<%:a%>
@@ -798,12 +932,15 @@ module.exports = {
             if (head == '\x03' || head == '\x06') { //如果是根变量，则直接返回  第1种情况
                 return ps.slice(1);
             }
-            let info = best(head); //根据第一个变量查找最优的对应的根变量，第2种情况
+            let info = best(head);
+            if (info) {
+                info = info.value; //根据第一个变量查找最优的对应的根变量，第2种情况
+            }
             if (!info) {
                 if (!prefix) {
                     let tipExpr = toOriginalExpr(srcExpr.trim());
-                    slog.ever(chalk.red('[MXC Error(tmpl-vars)] can not resolve bind expression: ' + tipExpr), 'at', chalk.grey(sourceFile), 'check variable reference or global variable declaration,read more: https://github.com/thx/magix/issues/37');
-                    return ['<%throw new Error("can not resolve bind expression")'];
+                    console.log(chalk.red('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.grey(sourceFile), 'check variable reference or global variable declaration,read more: https://github.com/thx/magix/issues/37');
+                    return ['<%throw new Error("can not resolve ref expression")%>'];
                 }
                 return [prefix()];
             }
@@ -812,7 +949,7 @@ module.exports = {
             }
             return ps; //.join('.');
         };
-        let analyseExpr = (expr, source, prefix) => {
+        let analyseExpr = (expr, source, prefix, keepSource) => {
             let result = find(expr, source, prefix); //获取表达式信息
             let vars = [];
             if (prefix) {
@@ -821,9 +958,11 @@ module.exports = {
                 let takeParts = () => {
                     if (temp.length) {
                         let part = temp.join('.');
-                        if (!configs.debug) {
-                            part = md5(part, 'compressRefExpr', '', true);
-                        }
+                        // if (!configs.debug &&
+                        //     !keepSource &&
+                        //     !part.startsWith(`'+`)) {
+                        //     part = md5(part, 'compressRefExpr', '', true);
+                        // }
                         rebuild.push(part);
                         temp.length = 0;
                     }
@@ -834,8 +973,13 @@ module.exports = {
                         takeParts();
                         one = `'+(${one.slice(1, -1)})+'`;
                         rebuild.push(one);
+                    } else if (one == '\x00') {
+                        temp.push(`'+${expr}+'`);
+                        if (configs.debug) {
+                            temp.push(tempVarsPrefixKey++);
+                        }
                     } else {
-                        temp.push(one);
+                        temp.push(escapeSQ(recoverString(one)));
                     }
                 }
                 takeParts();
@@ -870,22 +1014,23 @@ module.exports = {
                 return null;
             }
             let info = best(head);
-            if (!info) {
+            if (!info ||
+                !info.value) {
                 return null;
             }
-            return findRoot(info);
+            return findRoot(info.value);
         };
         let extractMxViewRootKeys = attrs => {
             let keys = [];
             let takeKeys = (m, c, v) => {
-                if (c == '@') {
-                    v = v.replace(refKeyReg, '');
-                    //console.log(v);
+                if (c == '#') {
+                    v = v.replace(refKeyReg, '').trim();
                     let ks = ExtractIds(v);
                     if (ks.length) {
                         for (let k of ks) {
                             m = findRoot(k);
-                            if (m && keys.indexOf(m) === -1) {
+                            if (m &&
+                                !keys.includes(m)) {
                                 keys.push(m);
                             }
                         }
@@ -895,7 +1040,6 @@ module.exports = {
             attrs.replace(artCtrlsReg, '$2')
                 .replace(mxViewAttrReg, (m, q, value) => {
                     q = value.indexOf('?');
-                    //console.log(value,q);
                     if (q > -1) {
                         value = value.substring(q + 1);
                         value.replace(tmplCmdReg, takeKeys);
@@ -906,6 +1050,7 @@ module.exports = {
             return keys;
         };
         fn = tmplCmd.store(fn, cmdStore); //存储代码，只分析模板
+        //console.log(JSON.stringify(fn));
         //textarea情况：<textarea><%:taValue%></textarea>处理成=><textarea <%:taValue%>><%=taValue%></textarea>
         fn = fn.replace(textaraReg, (_, attr, content) => {
             attr = tmplCmd.recover(attr, cmdStore);
@@ -927,30 +1072,222 @@ module.exports = {
         });
         //let mxeCount = 0;
         let tempVarsPrefixKey = 0;
-        let literalValues = Object.create(null);
-        let isLiteralValue = v => {
-            if (v === 'true' ||
-                v === 'false' ||
-                v === 'null' ||
-                v === 'undefined') {
-                return true;
+        //let literalValues = Object.create(null);
+        let processRefVariable = (v, src, isAnalysePath, autoGenerate) => {
+            let prefix = () => {
+                if (isLiteralValue(v)) {
+                    // if (!configs.debug) {
+                    //     v = literalValues[v];
+                    //     if (!v) {
+                    //         literalValues[v] = md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
+                    //         v = literalValues[v];
+                    //     }
+                    // } else {
+                    if (v.startsWith('"') ||
+                        v.startsWith("'") ||
+                        v.startsWith('`')) {
+                        v = v.slice(1, -1);
+                    }
+                    //}
+                    return v;
+                }
+                if (autoGenerate) {
+                    autoGenerate.called = true;
+                }
+                return '\x00';
             }
-            if (numberReg1.test(v) ||
-                numberReg2.test(v) ||
-                numberReg3.test(v) ||
-                numberReg4.test(v) ||
-                numberReg5.test(v)) {
-                return true;
+            let s = '';
+            if (v.startsWith('"') &&
+                v.endsWith('"')) {
+                s = v.slice(1, -1);
+                if (s == '\x03') {
+                    s = 'this';
+                }
+            } else if (v == '\x03') {
+                s = 'this';
+            } else {
+                let expr = analyseExpr(v, src, prefix, isAnalysePath);
+                s = expr.result;
             }
-            return false;
+            return `'${s}'`.replace(tailEmptyReg, '');
         };
         fn = fn.replace(tagReg, (_, tag, attrs) => {
             let hasMagixView = mxViewAttrReg.test(attrs); //是否有mx-view属性
             let hasIndeter = checkboxReg.test(attrs) && indeterminateReg.test(attrs);
             attrs = tmplCmd.recover(attrs, cmdStore, recoverString); //还原
+            //console.log(JSON.stringify(attrs));
             let findCount = 0;
             let mxRefExprInfo = [];
             let syncPaths = [];
+            //console.log(attrs);
+            let atRefOriginSource = ' _p_:refs="';
+            let hasSingleGroupsRef,
+                useGroupNames = [],
+                syncFromUI = false;
+            let transformAtOrRefExpr = (cmd, pfx, m) => {
+                let isAnalysePath = pfx === '~';
+                let isUniquePath = pfx === '!';
+                let keys = [];
+                let canUse = true;
+                let lastItem = '';
+                let testCmd = ToValidExpr(cmd);
+                let hasRef = jsGeneric.hasRefValue(testCmd);
+                if (!isAnalysePath &&
+                    !isUniquePath &&
+                    !hasRef) {
+                    let ids = ExtractIds(cmd);
+                    keys.push(...ids);
+                    lastItem = escapeSQ(stripNum(cmd).replace(globalTmplRootReg, ''));
+                    keys.push(`"${lastItem}"`);
+                    lastItem = `'${lastItem}'`;
+                } else {
+                    keys.push(cmd);
+                }
+                // if (!originIsArray &&
+                //     cmd.startsWith('[') &&
+                //     cmd.endsWith(']')) {
+                //     cmd = cmd.slice(1, -1);
+                //     let cs = jsGeneric.splitParams(cmd);
+                //     if (!isAnalysePath &&
+                //         !isUniquePath) {
+                //         cmd = cs.pop();
+                //     }
+                //     keys.push(...cs);
+                //     //keys.push(`"\x00${htmlIndex++}"`);
+                //     if (!isAnalysePath &&
+                //         !isUniquePath &&
+                //         !isLiteralValue(keys[keys.length - 1])) {
+                //         //padLastCmd = 1;
+                //         lastItem = escapeSQ(stripNum(cmd));
+                //         keys.push(`"${lastItem}"`);
+                //         lastItem = `'${lastItem}'`;
+                //     }
+                //     arrayBind = 1;
+                // } else {
+                //     keys.push(cmd);
+                // }
+                if (!keys.length) {
+                    canUse = false;
+                }
+                // if (!keys.length) {
+                //     canUse = false;
+                // let tipExpr = toOriginalExpr(m.trim());
+                // console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.grey(sourceFile), 'use like [locked,item.locked,\'ext string\',locked||item.locked]}');
+                //}
+
+                for (let k of keys) {
+                    if (!k.startsWith('"') &&
+                        !k.startsWith("'")) {
+                        atRefOriginSource += `<%#${k}%>`;
+                    }
+                }
+                let key = ``;
+                if (canUse) {
+                    let ks = [],
+                        autoGenerate = {
+                            called: false
+                        };
+                    for (let k of keys) {
+                        autoGenerate.called = false;
+                        let ref = processRefVariable(k, m, isAnalysePath || isUniquePath, autoGenerate);
+                        if (autoGenerate.called) {
+                            canUse = false;
+                            break;
+                        }
+                        //console.log(ref,k,autoGenerate.called);
+                        // if (!configs.debug &&
+                        //     ref == lastItem) {
+                        //     ref = `'${md5(ref.slice(1, -1), 'compressRefExpr', '', true)}'`;
+                        // }
+
+                        if (autoGenerate.called ||
+                            k.startsWith('"\x00') ||
+                            !ks.includes(ref)) {
+                            ks.push(ref);
+                        }
+                    }
+                    key = ks.join('+\'.\'+').replace(/'\+'/g, '');
+                    if (!isAnalysePath) {
+                        key = `'auto_key_` + key.substring(1);
+                    }
+                    //console.log(key);
+                    if (!configs.debug &&
+                        !isAnalysePath) {
+                        let sKeys = jsGeneric.splitString(key);
+                        let rKeys = [];
+                        let i = 0,
+                            max = sKeys.length - 1;
+                        for (; i <= max; i++) {
+                            let sk = sKeys[i];
+                            if (sk.startsWith(`'`)) {
+                                rKeys.push(`'`);
+                                if ((i <= max
+                                    && i > 0)) {
+                                    rKeys.push('.');
+                                }
+                                rKeys.push(md5(`${e.shortHTMLFile}#${sk}`, 'revisableString', '', true, null, false));
+                                if (i >= 0 &&
+                                    i != max) {
+                                    rKeys.push('.');
+                                }
+                                rKeys.push(`'`);
+                            } else {
+                                rKeys.push(sk);
+                            }
+                        }
+                        key = rKeys.join('');
+                        //console.log(key);
+                    }
+                }
+                if (!canUse) {
+                    if (isAnalysePath ||
+                        isUniquePath) {
+                        let tipExpr = toOriginalExpr(m.trim());
+                        console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.grey(sourceFile));
+                    }
+                }
+                if (!isAnalysePath) {
+                    if (console.debug) {
+                        // key = key.slice(1, -1);
+                        // if (hasVar1.test(key) &&
+                        //     hasVar2.test(key)) {
+                        //key = `'\x1e'+$encodeUrl('${key}')`;
+                        if (configs.debug) {
+                            let sKeys = jsGeneric.splitString(key);
+                            let rKeys = [];
+                            let i = 0,
+                                max = sKeys.length - 1;
+                            for (; i <= max; i++) {
+                                let sk = sKeys[i];
+                                if (sk.startsWith(`'`)) {
+                                    rKeys.push(htmlAttrs.escapeKeyCharsURI(sk));
+                                } else {
+                                    rKeys.push(sk);
+                                }
+                            }
+                            key = rKeys.join('');
+                            //console.log(key);
+                        }
+                        // } else {
+                        //     key = `'\x1e${htmlAttrs.escapeKeyCharsURI(key)}'`;
+                        // }
+                    }
+                }
+                //console.log(key);
+                // if (canUse &&
+                //     configs.tmplSupportSlotFn &&
+                //     !isAnalysePath &&
+                //     !isUniquePath) {
+                //     key = key.trim();
+                //     let last = key.charAt(key.length - 1);
+                //     key = key.slice(0, -1) + '.' + shortHTMLUId + '.' + last + '+$id';
+                // }
+                return {
+                    canUse,
+                    key,
+                    cmd
+                };
+            };
             let transformEvent = (exprInfo, source, attrName, art) => { //转换事件
                 let expr = exprInfo.expr;
                 expr = analyseExpr(expr, source); //分析表达式
@@ -959,9 +1296,15 @@ module.exports = {
                         syncPaths.push(v);
                     }
                 }
-                let e = `${art}{p:'${expr.result}'`;
+                let e = `${art}['${expr.result}'`;
                 if (exprInfo.fns) {
-                    e += `,f:` + exprInfo.fns;
+                    e += `,` + exprInfo.fns.replace(atRefOrAnalysePathExprReg, (m, pfx, cmd) => {
+                        let ref = transformAtOrRefExpr(cmd, pfx, m);
+                        if (ref.canUse) {
+                            return `<%#${ref.cmd},\x00xl\x00${ref.key}%>`;
+                        }
+                        return m;
+                    });
                 }
                 /*
                     对于view的绑定，如
@@ -972,9 +1315,12 @@ module.exports = {
                 if (attrName && attrName.startsWith(htmlAttrParamPrefix)) {
                     let an = attrName.substring(htmlAttrParamPrefix.length);
                     an = utils.camelize(an);
-                    e += `,a:'${an}'`;
+                    if (!exprInfo.fns) {
+                        e += ',';
+                    }
+                    e += `,'${an}'`;
                 }
-                e += '}';
+                e += ']';
                 mxRefExprInfo.push(e);
             };
             attrs = attrs.replace(bindReg, (m, name, q, art, expr) => {
@@ -986,55 +1332,90 @@ module.exports = {
                 let replacement = '<%=';
                 if (hasMagixView) {
                     if (name.startsWith(htmlAttrParamPrefix)) {
-                        replacement = '<%@';
+                        replacement = '<%#';
                     } else if (name.startsWith(tmplCondPrefix)) {
                         let key = name.replace(tmplCondPrefix, '');
                         let cd = e.tmplConditionAttrs[key];
                         if (cd && cd.attrName.startsWith(htmlAttrParamPrefix)) {
-                            replacement = '<%@';
+                            replacement = '<%#';
                         }
                     }
                 }
+                //console.log(exprInfo);
                 m = name + '=' + q + art + replacement + exprInfo.expr + '%>' + q;
                 return m;
             }).replace(bindReg2, (m, art, expr) => {
+                //hasIndeter = true;
                 expr = expr.trim();
                 let exprInfo = extractFunctions(expr);
                 art = art || '';
                 transformEvent(exprInfo, m, null, art);
                 findCount++;
                 return ' ';
-            }).replace(atRefOrAnalysePathExprReg, (m, pfx, cmd) => {
-                let key = `'\x1e#'`;
-                if (cmd != '\x03') {
-                    let prefix = () => {
-                        if (isLiteralValue(cmd)) {
-                            if (!literalValues[cmd]) {
-                                literalValues[cmd] = md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
-                            }
-                            return literalValues[cmd];
-                        }
-                        return md5('\x00' + tempVarsPrefixKey++, 'compressRefExpr', '', true);
-                    }
-                    let expr = analyseExpr(cmd, m, prefix);
-                    key = `'\x1e${expr.result}'`.replace(tailEmptyReg, '');
+            });
+            //attrs = attrs.replace(atRefOrAnalysePathExprReg, (m, pfx, cmd) => {
+            // let ref = transformAtOrRefExpr(cmd, pfx, m);
+            // let isAnalysePath = pfx === '~';
+            // let isUniquePath = pfx === '!';
+            // if (isAnalysePath ||
+            //     isUniquePath) {
+            //     hasIndeter = true;
+            //     return `<%${ref.key.replace('\x1e', '')}%>`;
+            // }
+            // if (ref.cmd == '\x03.$slots') {
+            //     hasSingleGroupsRef = true;
+            // } else if (ref.cmd.startsWith(`\x03.${quickGroupObjectPrefix}`) ||
+            //     ref.cmd.startsWith(`\x03.${quickGroupObjectPrefix1}`)) {
+            //     useGroupNames.push(ref.cmd.substring(2));
+            // }
+            //return `<%#${cmd}%>`;//,${ref.key}%>`;
+            //});
+            attrs = attrs.replace(atRefOrAnalysePathExprReg, (m, pfx, cmd) => {
+                let isAnalysePath = pfx === '~';
+                if (cmd == '\x03.$slots') {
+                    hasSingleGroupsRef = true;
+                } else if (cmd.startsWith(`\x03.${quickGroupObjectPrefix}`) ||
+                    cmd.startsWith(`\x03.${quickGroupObjectPrefix1}`)) {
+                    useGroupNames.push(cmd.substring(2));
                 }
-                if (pfx == '~') {
-                    hasIndeter = true;
-                    return `<%=${key}%>`;
+                // if (!configs.tmplSupportSlotFn) {
+                let ref = transformAtOrRefExpr(cmd, pfx, m);
+                if (isAnalysePath) {
+                    syncFromUI = true;
+                    return `<%${ref.key}%>`;
                 }
-                return `<%@${cmd},${key}%>`;
+                //console.log(ref,m);
+                if (ref.canUse) {
+                    return `<%#${ref.cmd},\x00xl\x00${ref.key}%>`;
+                }
+                // }
+                return m;
             });
             if (findCount > 0) {
-                attrs = ' mxc="[' + mxRefExprInfo.join(',') + ']" ' + attrs;
+                //console.log(mxRefExprInfo);
+                syncFromUI = true;
+                attrs = ' mx-ctrl="[' + mxRefExprInfo.join(',') + ']" ' + attrs;
             }
-            if (hasIndeter) {
-                let mxo = '\x1f';
-                attrs = ` mxo="${mxo}"` + attrs;
+            if (syncFromUI ||
+                hasIndeter) {
+                attrs = ' mx-host="\x1f"' + attrs;
             }
 
             if (hasMagixView) {
-                let keys = extractMxViewRootKeys(attrs);
+                //console.log(key);
+                let keys = extractMxViewRootKeys(attrs + atRefOriginSource + '"');
+                let groupIndex = keys.indexOf('$slots');
+                if (hasSingleGroupsRef) {
+                    if (groupIndex == -1) {
+                        keys.push('$slots');
+                    }
+                } else {
+                    if (groupIndex != -1) {
+                        keys.splice(groupIndex, 1);
+                    }
+                    //console.log(useGroupNames);
+                    keys.push(...useGroupNames);
+                }
                 if (keys.length) {
                     attrs = ` ${tmplMxViewParamKey}="${keys}"${attrs}`;
                 }
@@ -1042,9 +1423,62 @@ module.exports = {
             let prefix = '';
             return prefix + '<' + tag + attrs + '>';
         });
+        fn = tmplCmd.store(fn, cmdStore);
+        if (configs.tmplSupportSlot) {
+            let setInfo = qblance.setBalaceInfo(fn);
+            fn = qblance.processContent(setInfo.tmpl,
+                setInfo.index, true,
+                (_, attrs, content) => {
+                    tmplCmd.queryCmdsOfTmpl(content, cmdStore, e => {
+                        return e.replace(namedOfRefData, '<%#$1%>');
+                    });
+                    if (groupKeyReg.test(attrs)) {
+                        let ctxKeys = [],
+                            keys = [];
+                        attrs.replace(groupContextReg, (m, c) => {
+                            if (c) {
+                                let ck = c.split(',');
+                                for (let k of ck) {
+                                    k = k.trim();
+                                    ctxKeys.push(k);
+                                }
+                            }
+                        });
+                        content = tmplCmd.recover(content, cmdStore);
+                        content.replace(tmplCmdReg, (m, o, c) => {
+                            if (c) {
+                                let ks = ExtractIds(c);
+                                if (ks.length) {
+                                    for (let k of ks) {
+                                        m = findRoot(k);
+                                        if (m &&
+                                            !ctxKeys.includes(m) &&
+                                            m != '$viewId' &&
+                                            m != '$slots' &&
+                                            !keys.includes(m)) {
+                                            keys.push(m);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        //console.log(_, keys);
+                        if (keys.length) {
+                            return `<${tmplGroupTag} ${tmplGroupRootAttr}="${keys.join(',')}"${attrs}>${content}</${tmplGroupTag}>`
+                        }
+                        return _;
+                    }
+                    return _;
+                });
+            //console.log(fn);
+            fn = qblance.removeBalanceInfo(fn);
+        }
         fn = tmplCmd.recover(fn, cmdStore);
         fn = recoverString(stripNum(fn));
         e.globalVars = Object.keys(globalVars);
+        e.shortHTMLUId = shortHTMLUId;
+        //e.globalGroupKeys = groupAllKeys;
+        //console.log(fn);
         return fn;
     }
 };

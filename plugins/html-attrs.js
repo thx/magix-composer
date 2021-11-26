@@ -3,7 +3,7 @@
  */
 let tagsBooleanPrpos = {
     '*': {
-        spellcheck: 1,
+        //spellcheck: 1,
         hidden: 1
     },
     input: {
@@ -67,6 +67,11 @@ let tagsBooleanPrpos = {
         indeterminate: 1
     }
 };
+let tagsBooleanKeepTrueOrFalseValue = {
+    '*': {
+        spellcheck: 1
+    }
+};
 let tagsProps = {
     '*': {
 
@@ -74,10 +79,10 @@ let tagsProps = {
     input: {
         value: 'value'
     },
-    'input:checkbox': {
+    'input&checkbox': {
         checked: 'checked'
     },
-    'input:radio': {
+    'input&radio': {
         checked: 'checked'
     },
     option: {
@@ -100,26 +105,46 @@ let escapeMap = {
     '"': '&quot;',
     '\'': '&#27;'
 };
+
+let escapeSlashRegExp = /\\|'/g;
+let lineBreakReg = /\r\n?|\n|\u2028|\u2029/g;
 let escapeProcessor = m => escapeMap[m] || m;
+
+let encodeMore = {
+    '!': '%21',
+    '\'': '%27',
+    '(': '%28',
+    ')': '%29',
+    '*': '%2A'
+};
+
+let encodeMoreReg = /[!')(*]/g;
+let encodeReplacor = m => encodeMore[m];
+let keyCharsReg = /[?=&]/g;
 module.exports = {
     getInputTags() {
         return tagsAcceptUserInput;
     },
+    escapeKeyCharsURI(v) {
+        return v.replace(keyCharsReg, encodeURIComponent);
+    },
+    escapeURI(v) {
+        return encodeURIComponent(v).replace(encodeMoreReg, encodeReplacor);
+    },
+    escapeSlashAndBreak(attr) {
+        return attr.replace(escapeSlashRegExp, '\\$&').replace(lineBreakReg, '\\n')
+    },
     escapeAttr(attr) {
-        return attr.replace(escapeReg, escapeProcessor);
+        return attr.replace(escapeReg, escapeProcessor).replace(lineBreakReg, '\\n');
     },
     getProps(tag, type) {
         let all = Object.assign({}, tagsProps['*']);
-        let tagAndType = `${tag}:${type}`;
+        let tagAndType = `${tag}&${type}`;
         let props = tagsProps[tagAndType];
         if (props) {
             all = Object.assign(all, props);
         } else {
             let tags = tagsProps[tag];
-            if (tags) {
-                all = Object.assign(all, tags);
-            }
-            tags = tagsProps[tag + '&' + type];
             if (tags) {
                 all = Object.assign(all, tags);
             }
@@ -137,5 +162,17 @@ module.exports = {
             globals = Object.assign(globals, tags);
         }
         return globals;
+    },
+    getBooleanKeepValue(tag, type) {
+        let global = Object.assign({}, tagsBooleanKeepTrueOrFalseValue["*"]);
+        let tags = tagsBooleanKeepTrueOrFalseValue[tag];
+        if (tags) {
+            Object.assign(global, tags);
+        }
+        tags = tagsBooleanKeepTrueOrFalseValue[tag + '&' + type];
+        if (tags) {
+            Object.assign(global, tags);
+        }
+        return global;
     }
 };

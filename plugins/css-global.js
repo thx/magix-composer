@@ -7,12 +7,15 @@
 let path = require('path');
 let configs = require('./util-config');
 let cssChecker = require('./checker-css');
-let cssFileRead = require('./css-read');
+let cssRead = require('./css-read');
 let cssComment = require('./css-comment');
 let {
     cssRefReg
 } = require('./util-const');
 let cssTransform = require('./css-transform');
+let {
+    cloneAssign
+} = require('./util');
 let globalPromise;
 
 let processScope = ctx => {
@@ -20,9 +23,11 @@ let processScope = ctx => {
     let scopedStyles = [];
     let scopedCssNamesMap = Object.create(null);
     let scopedCssVarsMap = Object.create(null);
+    let scopedAtRules = Object.create(null);
     let scopedDeclaredInFiles = {
         vars: Object.create(null),
-        selectors: Object.create(null)
+        selectors: Object.create(null),
+        atRules: Object.create(null)
     };
 
     return new Promise((resolve, reject) => { //处理scoped样式
@@ -33,14 +38,16 @@ let processScope = ctx => {
                 scopedStyles,
                 scopedCssNamesMap,
                 scopedCssVarsMap,
-                scopedDeclaredInFiles
+                scopedDeclaredInFiles,
+                scopedAtRules
             });
         } else {
+            //debugger;
             let add = i => {
                 let currentFile = i.file;
                 let cssNamesKey = cssTransform.genCssNamesKey(configs.debug ? currentFile : 'scoped.style');
 
-                let shortFile = currentFile.replace(configs.moduleIdRemovedPath, '').substring(1);
+                let shortFile = currentFile.replace(configs.commonFolder, '').substring(1);
 
                 if (i.exists && i.content) {
                     let c = cssComment.clean(i.content);
@@ -59,19 +66,25 @@ let processScope = ctx => {
                             namesMap: scopedCssNamesMap,
                             varsMap: scopedCssVarsMap
                         });
+                        //console.log(c);
+                        cloneAssign(scopedAtRules, c.atRules);
                     } catch (e) {
                         reject(e);
                     }
                     cssChecker.storeStyleDeclared(i.file, {
                         vars: c.vars,
                         selectors: c.selectors,
-                        tagsOrAttrs: c.tagsOrAttrs
+                        tagsOrAttrs: c.tagsOrAttrs,
+                        atRules: c.atRules
                     });
                     for (let v in c.vars) {
                         scopedDeclaredInFiles.vars[v] = i.file;
                     }
                     for (let s in c.selectors) {
                         scopedDeclaredInFiles.selectors[s] = i.file;
+                    }
+                    for (let a in c.atRules) {
+                        scopedDeclaredInFiles.atRules[a] = i.file;
                     }
                     scopedStyles.push({
                         css: c.content,
@@ -94,7 +107,7 @@ let processScope = ctx => {
             let ps = [];
             for (let i = 0, ext; i < list.length; i++) {
                 ext = path.extname(list[i]);
-                ps.push(cssFileRead(list[i], ctx.context, '', ext));
+                ps.push(cssRead(list[i], ctx.context, '', ext));
             }
             Promise.all(ps).then(rs => {
                 for (let i = 0; i < rs.length; i++) {
@@ -108,6 +121,7 @@ let processScope = ctx => {
                     scopedStyles,
                     scopedCssNamesMap,
                     scopedCssVarsMap,
+                    scopedAtRules,
                     scopedDeclaredInFiles
                 });
             }).catch(reject);
@@ -125,6 +139,7 @@ module.exports = {
                         styles: ctx.scopedStyles,
                         namesMap: ctx.scopedCssNamesMap,
                         varsMap: ctx.scopedCssVarsMap,
+                        atRules: ctx.scopedAtRules,
                         declaredFiles: ctx.scopedDeclaredInFiles
                     };
                 });

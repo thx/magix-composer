@@ -1,14 +1,15 @@
 //处理文件的头信息
 //let configs = require('./util-config');
-let snippetReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#(?:snippet|gallery-config|gconfig|g-config|raw|gcfg)(?:[^\r\n]+)?\1\s*;?/g;
-//let excludeReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#exclude[\(\[]([\w,]+)[\)\]]\1\s*;?/g;
-let excludeReg1 = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#exclude\s*=\s*([\w,_]+)\1\s*;?/g;
-let loaderReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#loader\s*=\s*([\w]+)\1\s*;?/g;
-//let checkerReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#((?:un)?check)\[([\w,]+)\]\1\s*;?/g;
+let snippetReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?magix-composer\s*#\s*(?:snippet|gallery-config|gconfig|g-config|raw|gcfg|combine-config|ccfg|c-config)(?:[^\r\n]+)?\1\s*;?/g;
 
-//let checkerReg1 = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#((?:un)?check)\s*=\s*([\w,]+)\1\s*;?/g;
-let exRequiresReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#(?:(?:no|non|ex)requires)\s*=\s*([^\r\n;]+)\1\s*;?/g;
-//let jsThisAliasReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?#this\s*=\s*([\w_])\1\s*;?/g;
+//let excludeReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?\s*#\s*exclude[\(\[]([\w,]+)[\)\]]\1\s*;?/g;
+let excludeReg1 = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?magix-composer\s*#\s*exclude\s*=\s*([\w,_]+)\1\s*;?/g;
+let loaderReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?magix-composer\s*#\s*loader\s*=\s*([\w]+)\1\s*;?/g;
+//let checkerReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?\s*#\s*((?:un)?check)\[([\w,]+)\]\1\s*;?/g;
+
+//let checkerReg1 = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?\s*#\s*((?:un)?check)\s*=\s*([\w,]+)\1\s*;?/g;
+let exRequiresReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?magix-composer\s*#\s*(?:(?:no|non|ex)requires)\s*=\s*([^\r\n;]+)\1\s*;?/g;
+//let jsThisAliasReg = /(?:^|[\r\n])\s*(?:\/{2,})?\s*(['"])?\s*#\s*this\s*=\s*([\w_])\1\s*;?/g;
 module.exports = (content) => {
     let execBeforeProcessor = true,
         execAfterProcessor = true,

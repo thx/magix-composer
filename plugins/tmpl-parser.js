@@ -2,21 +2,27 @@ let htmlParser = require('./html-parser');
 let { nativeTags, svgTags, mathTags, svgUpperTags } = require('./html-tags');
 let chalk = require('chalk');
 let util = require('util');
-let slog = require('./util-log');
+let utils = require('./util');
 let configs = require('./util-config');
 let { htmlAttrParamFlag,
-    tmplTempStaticKey,
+    //tmplTempStaticKey,
     tmplTempRealStaticKey,
     tmplGroupTag,
     tmplGroupUseAttr,
     tmplGroupKeyAttr,
     tmplMxViewParamKey,
-    quickGroupTagName,
+    quickCommandTagName,
+    tmplGroupId,
+    tmplGroupParentId,
+    htmlAttrParamPrefix,
+    //tmplTempInlineStaticKey,
     quickSourceArt } = require('./util-const');
 let tmplCommandAnchorReg = /\x07\d+\x07/;
+let safeVarReg = /[^a-zA-Z0-9_$]/;
 let upperCaseReg = /[A-Z]/;
-let valuableReg = /^(?:\x07\d+\x07)+\s*\?\?/;
-let booleanReg = /^(?:\x07\d+\x07)+\s*\?/;
+let valuableReg = /^\s*(?:\x07\d+\x07)+\s*\?\?\s*/;
+let booleanReg = /^\s*(?:\x07\d+\x07)+\s*\?\s*/;
+let isMxViewAttrReg = /^(?:\x1c\d+\x1c)?mx-view$/;
 // let updateLinkage = (token, children, pos) => {
 //     token.first = false;
 //     token.firstElement = false;
@@ -67,6 +73,8 @@ module.exports = (input, htmlFile, walk) => {
     let inSVG = false;
     let tmplCustomAttrs = configs.tmplCustomAttrs;
     tokens.__map = tokensMap;
+    //console.log('---', htmlFile);
+    //console.log(input);
     htmlParser(input, {
         start(tag, {
             attrs,
@@ -76,11 +84,12 @@ module.exports = (input, htmlFile, walk) => {
             attrsStart,
             attrsEnd
         }) {
+            //console.log(tag,attrs);
             let lowerTag = tag.toLowerCase();
             if (htmlFile &&
                 upperCaseReg.test(tag) &&
                 !(inSVG && svgUpperTags[tag])) {
-                slog.ever(chalk.red('[MXC Tip(tmpl-parser)] avoid use ' + tag), 'at', chalk.magenta(htmlFile), 'use', chalk.red(lowerTag), 'instead');
+                console.log(chalk.red('[MXC Tip(tmpl-parser)] avoid use ' + tag), 'at', chalk.magenta(htmlFile), 'use', chalk.red(lowerTag), 'instead');
             }
             if (lowerTag == 'svg') {
                 inSVG = true;
@@ -108,9 +117,11 @@ module.exports = (input, htmlFile, walk) => {
             if (i != -1) {
                 pfx = tag.slice(0, i);
             }
+            let parent = ctrls[ctrls.length - 1];
             let attrsKV = Object.create(null);
             let token = {
                 id: 't' + id++,
+                pId: parent && parent.id,
                 tag,
                 pfx,
                 unary,
@@ -124,7 +135,6 @@ module.exports = (input, htmlFile, walk) => {
                 attrsEnd
             };
             tokensMap[token.id] = token;
-            let parent = ctrls[ctrls.length - 1];
             addChildren(token, parent);
             ctrls.push(token);
             tokens.push(token);
@@ -134,26 +144,27 @@ module.exports = (input, htmlFile, walk) => {
                 temp = a.name;
                 if (tmplCustomAttrs.length) {
                     for (let custom of tmplCustomAttrs) {
-                        if (util.isString(custom)) {
+                        if (utils.isString(custom)) {
                             if (custom == temp) {
                                 token.hasCustAttr = true;
                             }
-                        } else if (util.isRegExp(custom)) {
+                        } else if (util.types.isRegExp(custom)) {
                             if (custom.test(temp)) {
                                 token.hasCustAttr = true;
                             }
-                        } else if (util.isFunction(custom)) {
+                        } else if (utils.isFunction(custom)) {
                             if (custom(temp, token)) {
                                 token.hasCustAttr = true;
                             }
                         }
                     }
                 }
-                if (temp == 'mx-view') {
+                if (isMxViewAttrReg.test(temp)) {
                     token.hasMxView = true;
                     token.mxView = a.value;
-                } else if (temp == tmplTempStaticKey) {
-                    token.mxsKey = a.value;
+                } else if (temp == 'mx-ref' ||
+                    temp == 'mx5-ref') {
+                    token.hasMxRef = true;
                 } else if (temp == tmplTempRealStaticKey) {
                     token.mxsRealKey = a.value;
                 } else if (temp == tmplMxViewParamKey) {
@@ -163,20 +174,35 @@ module.exports = (input, htmlFile, walk) => {
                 } else if (temp == tmplGroupUseAttr) {
                     token.groupUseNode = tag == tmplGroupTag;
                     token.groupUse = a.value;
+                    if (safeVarReg.test(token.groupUse)) {
+                        throw new Error(`[MXC-Error(tmpl-parser)] unsupport mx-slot name "${token.groupUse}" at ${htmlFile}`);
+                    }
                 } else if (temp == tmplGroupKeyAttr) {
                     token.groupKeyNode = tag == tmplGroupTag;
                     token.groupKey = a.value;
+                    if (safeVarReg.test(token.groupKey)) {
+                        throw new Error(`[MXC-Error(tmpl-parser)] unsupport mx-slot name "${token.groupKey}" at ${htmlFile}`);
+                    }
+                } else if (temp == tmplGroupId) {
+                    token.groupId = a.value
+                } else if (temp == tmplGroupParentId) {
+                    token.groupParentId = a.value
+                } else if (temp == 'fn') {
+                    token.groupContextNode = tag == tmplGroupTag;
                 }
                 if (!a.unary) {
-                    if (a.value.indexOf('@') > -1) {
+                    if (a.value.indexOf('@:') > -1) {
                         token.atAttrContent = true;
                     }
                     if (a.value.startsWith('\x1f')) {
                         token.hasMxEvent = true;
                     }
-                    if (a.value.startsWith('\x07') &&
-                        (valuableReg.test(a.value) || booleanReg.test(a.value))) {
-                        token.condAttr = true;
+                    if (valuableReg.test(a.value) ||
+                        booleanReg.test(a.value)) {
+                        if (!a.name.startsWith(`${htmlAttrParamFlag}@`) &&
+                            !a.name.startsWith(`${htmlAttrParamPrefix}@`)) {
+                            token.condAttr = true;
+                        }
                     }
                     temp += '="' + a.value + '"';
                     if (!tmplCommandAnchorReg.test(a.name)) {
@@ -201,19 +227,25 @@ module.exports = (input, htmlFile, walk) => {
             }
         },
         end(tag, { start, end, attrs }) {
+            //console.log('end', tag);
             let token = ctrls.pop();
+            if (token.tag == tmplGroupTag &&
+                !token.groupKeyNode &&
+                !token.groupUseNode) {
+                throw new Error('[MXC-Error(tmpl-parser)] mx-slot missing name attribute at ' + htmlFile);
+            }
             if (!token || token.tag !== tag) {
                 let msg = '[MXC-Error(tmpl-parser)] ';
                 if (!token) {
                     msg += `can not process unopened tag "</${tag}>"`;
                 } else {
                     let tip = 'open tag "' + token.tag + '"';
-                    if (token.tag == quickGroupTagName) {
+                    if (token.tag == quickCommandTagName) {
                         tip = `art ctrl "{{` + token.attrsKV[quickSourceArt] + '}}"';
                     }
                     msg += `"</${tag}>" unmatched ${tip}`;
                 }
-                throw new Error(msg);
+                throw new Error(msg + ' at ' + htmlFile);
             }
             let lower = tag.toLowerCase();
             if (lower == 'foreignobject') {
@@ -233,10 +265,24 @@ module.exports = (input, htmlFile, walk) => {
             token.contentEnd = start;
             token.end = end;
         },
+        comment(cmd, start, end) {
+            let token = {
+                id: 't' + id++,
+                isComment: true,
+                content: cmd,
+                start,
+                end
+            };
+            let parent = ctrls[ctrls.length - 1];
+            addChildren(token, parent);
+            tokens.push(token);
+            tokensMap[token.id] = token;
+        },
         chars(text, { start, end }) {
             let token = {
                 id: 't' + id++,
                 isText: true,
+                content: text,
                 start,
                 end
             };
@@ -249,7 +295,7 @@ module.exports = (input, htmlFile, walk) => {
     for (let i = tokens.length, token; i--;) {
         token = tokens[i];
         if (walk) {
-            walk(token);
+            walk(token, tokensMap);
         }
         if (token.isChild) {
             tokens.splice(i, 1);

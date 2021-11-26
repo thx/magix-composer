@@ -2,7 +2,6 @@
     检测magix项目中，模板书写是否合法及可能产生问题的地方
  */
 let chalk = require('chalk');
-let slog = require('./util-log');
 let htmlParser = require('./html-parser');
 let configs = require('./util-config');
 let upperCaseReg = /[A-Z]/g;
@@ -15,7 +14,6 @@ let disallowedTags = {
     meta: 1,
     base: 1,
     basefont: 1,
-    title: 1,
     html: 1,
     body: 1
 };
@@ -37,22 +35,24 @@ module.exports = {
         if (e.checker.tmplAttrAnchor &&
             (tn == 'a' || tn == 'area')) {
             if (attrsMap.target == '_self') {
-                slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('remove unnecessary target="_self"'), 'at', chalk.grey(e.shortHTMLFile), 'in', newMatch);
+                console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('remove unnecessary target="_self"'), 'at', chalk.grey(e.shortHTMLFile), 'in', newMatch);
             } else if (attrsMap.target &&
                 (!attrsMap.rel || !anchorSafeFalgsReg.test(attrsMap.rel))) {
-                slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('add rel="noopener noreferrer" to ' + newMatch), 'at', chalk.grey(e.shortHTMLFile), 'more info:', chalk.magenta('https://github.com/asciidoctor/asciidoctor/issues/2071'));
+                console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('add rel="noopener noreferrer" to ' + newMatch), 'at', chalk.grey(e.shortHTMLFile), 'more info:', chalk.magenta('https://github.com/asciidoctor/asciidoctor/issues/2071'));
             }
-        } else if (e.checker.tmplDisallowedTag && disallowedTags.hasOwnProperty(tn)) {
-            slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('remove tag ' + newMatch), 'at', chalk.grey(e.shortHTMLFile), (tn == 'style') ? ('use' + chalk.red(' Magix.applyStyle') + ' instead') : '');
-        } else if (e.checker.tmplAttrIframe && tn == 'iframe') {
-            if (!attrsMap.sandbox) {
-                slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('add sandbox to ' + newMatch), 'at', chalk.grey(e.shortHTMLFile), 'more info:', chalk.magenta('http://www.w3school.com.cn/tags/att_iframe_sandbox.asp'));
+        } else if (e.checker.tmplDisallowedTag &&
+            disallowedTags.hasOwnProperty(tn)) {
+            console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('remove tag ' + newMatch), 'at', chalk.grey(e.shortHTMLFile), (tn == 'style') ? ('use' + chalk.red(' Magix.applyStyle') + ' instead') : '');
+        } else if (e.checker.tmplAttrIframe &&
+            tn == 'iframe') {
+            if (attrsMap.sandbox == null) {
+                console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('add sandbox to ' + newMatch), 'at', chalk.grey(e.shortHTMLFile), 'more info:', chalk.magenta('http://www.w3school.com.cn/tags/att_iframe_sandbox.asp'));
             }
         }
         if (e.checker.tmplAttrDangerous) {
             for (let a of tagInfo.attrs) {
                 if (a[1].startsWith('on')) {
-                    slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('remove dnagerous attr ' + a[1]), 'at', chalk.grey(e.shortHTMLFile), 'near', newMatch);
+                    console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('remove dnagerous attr ' + a[1]), 'at', chalk.grey(e.shortHTMLFile), 'near', newMatch);
                 }
             }
         }
@@ -64,19 +64,19 @@ module.exports = {
         upperCaseReg.lastIndex = 0;
         if (upperCaseReg.test(eventName)) {
             eventName = 'mx-' + eventName;
-            slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('avoid use ' + eventName), 'at', chalk.grey(e.shortHTMLFile), 'use', chalk.red(eventName.toLowerCase()), 'instead', 'more info:', chalk.magenta('https://github.com/thx/magix/issues/35'));
+            console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('avoid use ' + eventName), 'at', chalk.grey(e.shortHTMLFile), 'use', chalk.red(eventName.toLowerCase()), 'instead', 'more info:', chalk.magenta('https://github.com/thx/magix/issues/35'));
         }
     },
     checkMxEvengSingQuote(single, match, e) {
         if (!configs.debug) return;
         if (single) {
-            slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('avoid use single quote:' + match), 'at', chalk.grey(e.shortHTMLFile), 'use double quote instead');
+            console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('avoid use single quote:' + match), 'at', chalk.grey(e.shortHTMLFile), 'use double quote instead');
         }
     },
     checkMxEventParams(eventName, params, match, e) {
         if (!configs.debug) return;
         if (params.charAt(0) != '{' || params.charAt(params.length - 1) != '}') {
-            slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.magenta('not recommended event params:' + match), 'at', chalk.grey(e.shortHTMLFile), 'replace it like', chalk.magenta('mx-' + eventName + '="({p1:\'p1\',p2:\'p2\'})"'));
+            console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.magenta('not recommended event params:' + match), 'at', chalk.grey(e.shortHTMLFile), 'replace it like', chalk.magenta('mx-' + eventName + '="({p1:\'p1\',p2:\'p2\'})"'));
         }
     },
     checkMxViewParams(paramName, e, prefix) {
@@ -84,7 +84,7 @@ module.exports = {
         if (configs.debug) {
             upperCaseReg.lastIndex = 0;
             if (upperCaseReg.test(paramName)) {
-                slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('avoid use ' + prefix + paramName), 'at', chalk.grey(e.shortHTMLFile), 'use', chalk.red(prefix + hname), 'instead', 'more info:', chalk.magenta('https://github.com/thx/magix/issues/35'));
+                console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('avoid use ' + prefix + paramName), 'at', chalk.grey(e.shortHTMLFile), 'use', chalk.red(prefix + hname), 'instead', 'more info:', chalk.magenta('https://github.com/thx/magix/issues/35'));
             }
         }
         paramName = hname;
@@ -94,7 +94,7 @@ module.exports = {
     checkStringRevisable(content, match, e) {
         if (!configs.debug) return;
         if (tmplCommandAnchorReg.test(content)) {
-            slog.ever(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('unsupport ' + match), 'at', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('unsupport ' + match), 'at', chalk.grey(e.shortHTMLFile));
         }
     }
 };

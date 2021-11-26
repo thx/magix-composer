@@ -1,6 +1,6 @@
 let tp = require('../plugins/tmpl-parser');
 let hm = require('html-minifier');
-let input = hm.minify(`<form mx-view="app/gallery/mx-validation/index" id="form_">
+let input = hm.minify(`<form mx-view="app/gallery/mx-validation/index" id="form_" style="font-color  : red;a_b;">
     <div class="form-line clearfix">
         <label class="line-label">
             <i class="line-required">*</i> 必填校验：
@@ -96,14 +96,13 @@ let input = hm.minify(`<form mx-view="app/gallery/mx-validation/index" id="form_
   removeEmptyAttributes: true,
   collapseInlineTagWhitespace: true,
   caseSensitive: true,
-  removeAttributeQuotes: true,
-  removeRedundantAttributes: true,
-  sortClassName: true
+  minifyCSS:true,
+  removeRedundantAttributes: true
 });
-let tokens = tp(input);
+//let tokens = tp(input);
 
-` abc=dev class="mb5 mt5 clearfix"  ::class=filter-item checked def`.replace(/([\w-:]+)(?:=(?:(["'])(.*?)\2|(\S*)))?/g, (m, key, q, value, value1) => {
-  console.log(key, '=', value || value1);
-});
-
-console.log(input, JSON.stringify(tokens));
+//` abc=dev class="mb5 mt5 clearfix"  ::class=filter-item checked def`.replace(/([\w-:]+)(?:=(?:(["'])(.*?)\2|(\S*)))?/g, (m, key, q, value, value1) => {
+  //console.log(key, '=', value || value1);
+//});
+console.log(input);
+//console.log(input, JSON.stringify(tokens));

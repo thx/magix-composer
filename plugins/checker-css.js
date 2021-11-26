@@ -1,7 +1,6 @@
 let configs = require('./util-config');
-let slog = require('./util-log');
-let chalk = require('chalk');
 let consts = require('./util-const');
+let chalk = require('chalk');
 
 let ItemUsed = 1;
 let ItemDeclared = 2;
@@ -16,7 +15,7 @@ let FileStylesDeclared = Object.create(null);
 let FileTemplatesUsed = Object.create(null);
 //追踪不存在的文件
 let FileUnexists = Object.create(null);
-//记录样式文件中[ref="@path.css:selector"]使用的选择器或变量
+//记录样式文件中["ref@:path.css:selector"]使用的选择器或变量
 let FileStylesUsed = Object.create(null);
 //记录复杂的样式
 let FileStylesComplex = Object.create(null);
@@ -35,7 +34,7 @@ module.exports = {
         FileTemplatesUsed = Object.create(null);
         //追踪不存在的文件
         FileUnexists = Object.create(null);
-        //记录样式文件中[ref="@path.css:selector"]使用的选择器或变量
+        //记录样式文件中["ref@:path.css:selector"]使用的选择器或变量
         FileStylesUsed = Object.create(null);
         //记录复杂的样式
         FileStylesComplex = Object.create(null);
@@ -43,6 +42,13 @@ module.exports = {
         FileStylesGlobalVarUsed = Object.create(null);
     },
     resetByHost(from) {
+        // let ship = FileRelationships[from];
+        // if (ship &&
+        //     ship.templates) {
+        //     for (let p in ship.templates) {
+        //         delete FileTemplatesUsed[p];
+        //     }
+        // }
         delete FileRelationships[from];
         delete FileHostUsed[from];
         delete FileUnexists[from];
@@ -111,7 +117,8 @@ module.exports = {
             info = FileTemplatesUsed[file] = {
                 vars: Object.create(null),
                 selectors: Object.create(null),
-                tagsOrAttrs: Object.create(null)
+                tagsOrAttrs: Object.create(null),
+                atRules: Object.create(null)
             };
         }
         if (used.selectors) {
@@ -122,6 +129,9 @@ module.exports = {
         }
         if (used.tagsOrAttrs) {
             Object.assign(info.tagsOrAttrs, used.tagsOrAttrs);
+        }
+        if (used.atRules) {
+            Object.assign(info.atRules, used.atRules);
         }
     },
     storeStyleUsed(host, file, used) {
@@ -165,7 +175,8 @@ module.exports = {
         if (!info) {
             info = FileHostUsed[host][file] = {
                 vars: Object.create(null),
-                selectors: Object.create(null)
+                selectors: Object.create(null),
+                atRules: Object.create(null)
             };
         }
         if (used.selectors) {
@@ -173,6 +184,9 @@ module.exports = {
         }
         if (used.vars) {
             Object.assign(info.vars, used.vars);
+        }
+        if (used.atRules) {
+            Object.assign(info.atRules, used.atRules);
         }
     },
     hostAddTemplate(host, template) {
@@ -192,10 +206,13 @@ module.exports = {
             };
         }
         let dest = FileRelationships[host].styles;
-        let keys = Object.keys(dest);
-        dest[style] = keys.length;
+        if (dest[style] == null) {
+            let keys = Object.keys(dest);
+            dest[style] = keys.length;
+        }
     },
     output() {
+        //debugger;
         if (!configs.checker.css || !configs.debug) return;
         let declared = Object.create(null);
         for (let p in FileStylesDeclared) {
@@ -234,7 +251,9 @@ module.exports = {
                         if (!un[p]) {
                             un[p] = Object.create(null);
                         }
-                        un[p][z] = ItemUsed;
+                        if (used[p][z] !== 0) {
+                            un[p][z] = ItemUsed;
+                        }
                     }
                 }
             }
@@ -253,16 +272,20 @@ module.exports = {
         let usedGlobalVars = Object.create(null);
         let updateGlobalVars = vars => {
             let result = false;
-            if (vars.startsWith(`--${consts.cssIdGlobalPrefix}`)) {
-                for (let host in FileStylesGlobalVarUsed) {
-                    let dest = FileStylesGlobalVarUsed[host];
-                    if (!usedGlobalVars[host]) {
-                        usedGlobalVars[host] = Object.create(null);
+            let prefixes = [...configs.cssGlobalVarPrefixes, consts.cssScopedVarPrefix];
+            for (let prefix of prefixes) {
+                if (vars.startsWith(prefix)) {
+                    for (let host in FileStylesGlobalVarUsed) {
+                        let dest = FileStylesGlobalVarUsed[host];
+                        if (!usedGlobalVars[host]) {
+                            usedGlobalVars[host] = Object.create(null);
+                        }
+                        if (dest[vars]) {
+                            usedGlobalVars[host][vars] = ItemDeclared;
+                            result = true;
+                        }
                     }
-                    if (dest[vars]) {
-                        usedGlobalVars[host][vars] = ItemDeclared;
-                        result = true;
-                    }
+                    break;
                 }
             }
             return result;
@@ -302,26 +325,26 @@ module.exports = {
 
         for (let host in unexist) {
             let dest = unexist[host];
-            let hostShort = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let hostShort = host.replace(configs.commonFolder, '').substring(1);
             for (let aim in dest) {
                 let selectors = dest[aim];
-                let aimShort = aim.replace(configs.moduleIdRemovedPath, '').substring(1);
+                let aimShort = aim.replace(configs.commonFolder, '').substring(1);
                 for (let selector in selectors) {
                     for (let key in selectors[selector]) {
-                        slog.ever('[MXC(checker)]', chalk.grey(hostShort), 'use unexist', chalk.red(key), 'from', chalk.grey(aimShort));
+                        console.log('[MXC(checker)]', chalk.grey(hostShort), 'use unexist or unapplied', chalk.red(key), 'from', chalk.grey(aimShort));
                     }
                 }
             }
         }
         for (let p in FileStylesComplex) {
-            let short = p.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = p.replace(configs.commonFolder, '').substring(1);
             let rules = FileStylesComplex[p];
-            slog.ever('[MXC(checker)]', chalk.grey(short) + ' avoid use ' + chalk.red(`"${rules.join('","')}"`));
+            console.log('[MXC(checker)]', chalk.grey(short) + ' avoid use ' + chalk.red(`"${rules.join('","')}"`));
         }
 
         for (let fn in declared) {
             let selectors = declared[fn];
-            let short = fn.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = fn.replace(configs.commonFolder, '').substring(1);
             let neverUsedSelectors = [],
                 neverUsedTagsOrAttrs = [],
                 neverUsedVars = [],
@@ -329,11 +352,10 @@ module.exports = {
             for (let selector in selectors) {
                 let dest = selectors[selector];
                 for (let key in dest) {
-                    if ((dest[key] & ItemUsed) != ItemUsed) {
+                    if ((dest[key] & ItemUsed) != ItemUsed &&
+                        !configs.selectorDSEndReg.test(key)) {
                         if (selector == 'selectors') {
-                            if (!configs.selectorDSEndReg.test(key)) {
-                                neverUsedSelectors.push('.' + key);
-                            }
+                            neverUsedSelectors.push('.' + key);
                         } else if (selector == 'vars') {
                             if (!updateGlobalVars(key)) {
                                 neverUsedVars.push(key);
@@ -347,21 +369,21 @@ module.exports = {
                 }
             }
             if (neverUsedSelectors.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used selectors ' + chalk.red(`"${neverUsedSelectors.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used selectors ' + chalk.red(`"${neverUsedSelectors.join('","')}"`));
             }
             if (neverUsedTagsOrAttrs.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used tags or attrs ' + chalk.red(`"${neverUsedTagsOrAttrs.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used tags or attrs ' + chalk.red(`"${neverUsedTagsOrAttrs.join('","')}"`));
             }
             if (neverUsedVars.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used vars ' + chalk.red(`"${neverUsedVars.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used vars(properties) ' + chalk.red(`"${neverUsedVars.join('","')}"`));
             }
             if (neverUsedAtRules.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short) + ' never used at rules ' + chalk.red(`"${neverUsedAtRules.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short) + ' never used at rules ' + chalk.red(`"${neverUsedAtRules.join('","')}"`));
             }
         }
 
         for (let host in FileTemplatesUsed) {
-            let short = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = host.replace(configs.commonFolder, '').substring(1);
             let dest = FileTemplatesUsed[host];
             let undeclared = [];
             let tUsed = templateUsed[host];
@@ -384,21 +406,21 @@ module.exports = {
                 }
             }
             if (undeclared.length) {
-                slog.ever('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(`"${undeclared.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(`"${undeclared.join('","')}"`));
             }
         }
         for (let fu in FileUnexists) {
-            let short = fu.replace(configs.moduleIdRemovedPath, '').substring(1);
-            slog.ever('[MXC(checker)]', chalk.grey(short), 'can not find', chalk.red(FileUnexists[fu]));
+            let short = fu.replace(configs.commonFolder, '').substring(1);
+            console.log('[MXC(checker)]', chalk.grey(short), 'can not find', chalk.red(FileUnexists[fu]));
         }
         for (let host in FileStylesGlobalVarUsed) {
-            let short = host.replace(configs.moduleIdRemovedPath, '').substring(1);
+            let short = host.replace(configs.commonFolder, '').substring(1);
             let dest = FileStylesGlobalVarUsed[host];
             let used = usedGlobalVars[host];
             for (let key in dest) {
                 if (!used ||
                     used[key] != ItemDeclared) {
-                    slog.ever('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(key));
+                    console.log('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(key));
                 }
             }
         }

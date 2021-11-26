@@ -6,10 +6,8 @@ let path = require('path');
 
 let less = require('less');
 let chalk = require('chalk');
-let util = require('util');
 
 let utils = require('./util');
-let slog = require('./util-log');
 let configs = require('./util-config');
 let fd = require('./util-fd');
 
@@ -25,7 +23,7 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
         shortFile
     };
     let before = configs.compileCSSStart(content, cfg);
-    if (util.isString(before)) {
+    if (utils.isString(before)) {
         cfg.content = before;
         before = Promise.resolve(cfg);
     } else if (!before || !before.then) {
@@ -49,7 +47,7 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
             }
             sass.render(cssCompileConfigs, (err, result) => {
                 if (err) {
-                    slog.ever(chalk.red('[MXC Error(css-read)]'), 'compile sass error:', chalk.red(err + ''), 'at', chalk.grey(e.shortFile));
+                    console.log(chalk.red('[MXC Error(css-read)]'), 'compile sass error:', chalk.red(err + ''), 'at', chalk.grey(e.shortFile));
                     return reject(err);
                 }
                 let map = sourceMap(result.map ? result.map.toString() : '', e.file, {
@@ -77,7 +75,7 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
             }
             less.render(e.content, cssCompileConfigs, (err, result) => {
                 if (err) {
-                    slog.ever(chalk.red('[MXC Error(css-read)]'), 'compile less error:', chalk.red(err + ''), 'at', chalk.grey(e.shortFile));
+                    console.log(chalk.red('[MXC Error(css-read)]'), 'compile less error:', chalk.red(err + ''), 'at', chalk.grey(e.shortFile));
                     return reject(err);
                 }
                 let map = sourceMap(configs.debug && configs.sourceMapCss ? result.map : '', e.file);
@@ -98,6 +96,12 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
             let content = fd.read(e.file);
             let info = jsMx.process(content, e.file);
             compileContent(e.file, info.style, info.styleType, resolve, reject, e.shortFile);
+        } else {
+            resolve({
+                exists: false,
+                file: e.file,
+                content: e.content
+            });
         }
     });
 };
@@ -105,13 +109,13 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
 module.exports = (file, e, source, ext, refInnerStyle) => {
     return new Promise((done, reject) => {
         let info = e.contentInfo;
-        let shortFile = file.replace(configs.moduleIdRemovedPath, '').substring(1);
+        let shortFile = file.replace(configs.commonFolder, '').substring(1);
         let resolve = info => {
             if (info.exists) {
                 let inner = configs.autoprefixer ? cssAutoprefixer(info.content) : Promise.resolve(info.content);
                 inner.then(css => {
                     let r = configs.compileCSSEnd(css, info);
-                    if (util.isString(r)) {
+                    if (utils.isString(r)) {
                         return Promise.resolve(r);
                     }
                     if (r && r.then) {
@@ -124,7 +128,7 @@ module.exports = (file, e, source, ext, refInnerStyle) => {
                 }).catch((...args) => {
                     let e = args[0];
                     if (e && e.name == 'CssSyntaxError') {
-                        slog.ever(chalk.red('[MXC Error(css-read)]'), 'autoprefixer error:', chalk.red(e.reason), 'at', chalk.grey(shortFile), 'at line', chalk.magenta(e.line));
+                        console.log(chalk.red('[MXC Error(css-read)]'), 'autoprefixer error:', chalk.red(e.reason), 'at', chalk.grey(shortFile), 'at line', chalk.magenta(e.line));
                     }
                     reject(args);
                 });
@@ -136,12 +140,12 @@ module.exports = (file, e, source, ext, refInnerStyle) => {
             let type = info.styleType;
             if (ext != '.mx' && ext != '.mmx') {
                 if (type && type != ext) {
-                    slog.ever(chalk.red('[MXC Error(css-read)] conflicting style language'), 'at', chalk.magenta(shortFile), 'near', chalk.magenta(source + ' and ' + info.styleTag));
+                    console.log(chalk.red('[MXC Error(css-read)] conflicting style language'), 'at', chalk.magenta(shortFile), 'near', chalk.magenta(source + ' and ' + info.styleTag));
                 }
             }
             compileContent(file, info.style, ext, resolve, reject, shortFile);
         } else {
-            fs.access(file, (fs.constants ? fs.constants.R_OK : fs.R_OK), err => {
+            fs.readFile(file, (err, content) => {
                 if (err) {
                     resolve({
                         exists: false,
@@ -149,8 +153,7 @@ module.exports = (file, e, source, ext, refInnerStyle) => {
                         content: ''
                     });
                 } else {
-                    let fileContent = fd.read(file);
-                    compileContent(file, fileContent, ext, resolve, reject, shortFile);
+                    compileContent(file, content.toString(), ext, resolve, reject, shortFile);
                 }
             });
         }

@@ -20,7 +20,7 @@ module.exports = {
             match = attrMxEvent(e, match, refTmplCommands, toSrc);
             match = attrMxView(e, match, refTmplCommands);
             match = attrLink(e, tagName, match, refTmplCommands);
-            match = tmplClass(tagName, match, cssNamesMap, refTmplCommands, e);
+            match = tmplClass(tagName, match, cssNamesMap, refTmplCommands, e, toSrc);
             match = checkerTmpl.checkTag(e, match, toSrc);
             return match;
         });

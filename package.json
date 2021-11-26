@@ -1,6 +1,6 @@
 {
   "name": "magix-composer",
-  "version": "1.0.7",
+  "version": "3.1.0",
   "description": "compile html, style and javascript files into javascript",
   "main": "index.js",
   "repository": {
@@ -16,19 +16,18 @@
     "offline"
   ],
   "dependencies": {
-    "acorn": "7.1.x",
-    "acorn-import-meta": "1.0.x",
-    "acorn-walk": "7.0.x",
-    "autoprefixer": "9.7.x",
-    "chalk": "3.0.x",
-    "cssnano": "4.1.x",
+    "acorn": "8.5.x",
+    "acorn-walk": "8.2.x",
+    "autoprefixer": "10.4.x",
+    "chalk": "4.1.x",
+    "clean-css": "5.2.x",
     "html-entities-decoder": "1.0.x",
     "html-minifier": "4.0.x",
-    "less": "3.10.x",
-    "postcss": "7.0.x",
-    "string-width": "4.2.x"
+    "less": "4.1.x",
+    "postcss": "8.3.x",
+    "typescript": "4.4.x"
   },
-  "author": "xinglie <xinglie.lkf@taobao.com>",
+  "author": "xinglie <https://github.com/xinglie>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/thx/magix-composer/issues"

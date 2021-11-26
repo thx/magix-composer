@@ -1,28 +1,62 @@
 let path = require('path');
 let fs = require('fs');
-let cssnano = require('cssnano');
+let cssClean = require('./css-clean');
 let fd = require('./util-fd');
 let configs = require('./util-config');
 let tmplCmd = require('./tmpl-cmd');
+let cssRead = require('./css-read');
+let cssTransform = require('./css-transform');
+/**
+ * let str=`base64@:./path/to/file.ext`
+ * 
+ */
+let styleId = file => cssTransform.genCssNamesKey(file);
+let style = file => {
+    let ext = path.extname(file);
+    return cssRead(file, {}, '', ext, false).then(r => {
+        if (configs.debug) {
+            return r.exists ? r.content : 'can not find ' + file;
+        }
+        return cssClean.minify(r.content);
+    }).catch(e => {
+        return e.message;
+    });
+}
 let actions = {
     str(file) {
-        return Promise.resolve(fd.read(file));
+        return JSON.stringify(fd.read(file));
+    },
+    src(file) {
+        return fd.read(file);
     },
     base64(file) {
         let r = Buffer.from(fd.read(file, true));
-        return Promise.resolve(r.toString('base64'));
+        return JSON.stringify(r.toString('base64'));
     },
     style(file) {
-        let content = fd.read(file);
-        return cssnano.process(content,
-            Object.assign({}, configs.cssnano)
-        ).then(r => {
-            return r.css;
+        return style(file).then(css => {
+            return JSON.stringify(css);
         });
     },
     html(file) {
         let content = fd.read(file);
-        return tmplCmd.tidy(content);
+        return JSON.stringify(tmplCmd.tidy(content));
+    },
+    uId(file) {
+        return JSON.stringify(styleId(file));
+    },
+    as(file) {
+        return style(file).then(css => {
+            return JSON.stringify([styleId(file), css]).slice(1, -1);
+        });
+    },
+    compiled(file, e) {
+        let to = path.resolve(configs.compiledFolder + file.replace(configs.commonFolder, ''));
+        return new Promise((resolve, reject) => {
+            e.processContent(file, to).then(info => {
+                resolve(info.content);
+            }).catch(reject);
+        });
     }
 };
 module.exports = e => {
@@ -35,7 +69,7 @@ module.exports = e => {
         let resume = () => {
             e.content = e.content.replace(configs.fileReplacerPrefixesHolderReg, m => {
                 m = locker[m];
-                return JSON.stringify(m);
+                return m;
             });
             resolve(e);
         };
@@ -45,17 +79,19 @@ module.exports = e => {
             }
         };
         let readContent = task => {
-            fs.access(task[1], (fs.constants ? fs.constants.R_OK : fs.R_OK), e => {
-                if (e) {
+            fs.access(task[1], (fs.constants ? fs.constants.R_OK : fs.R_OK), ex => {
+                if (ex) {
                     completed++;
                     locker[task[0]] = `can not find ${task[3]}`;
                     check();
                 } else {
-                    let fn = actions[task[2]];
-                    if (!fn) {
-                        fn = configs.fileReplacerProcessor;
+                    let fn = actions[task[2]],
+                        p;
+                    if (fn) {
+                        p = fn(task[1], e);
+                    } else {
+                        p = configs.fileReplacerProcessor(task[2], task[1], e);
                     }
-                    let p = fn(task[1], task[2]);
                     if (!p.then) {
                         p = Promise.resolve(p || '');
                     }

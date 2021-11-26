@@ -1,23 +1,26 @@
 /*
     http://www.w3school.com.cn/cssref/css_selectors.asp
     简易parser，只处理类与标签，其中
-    processRules 参考了这个：https://github.com/fb55/css-what/blob/master/index.js
+    processRules 参考了这个：https://github.com/fb55/css-what/
     思路：跳过不必要处理的css，在处理规则时，跳过{ }
  */
-let configs = require('./util-config');
+//let configs = require('./util-config');
 let cache = Object.create(null);
 let nameReg = /^(?:\\.|[\w\-\u00c0-\uFFFF])+/;
-let atNameReg = /\.@([\w\-\u00c0-\uFFFF]+)/g;
+//let atNameReg = /\.@([\w\-\u00c0-\uFFFF]+)/g;
 //modified version of https://github.com/jquery/sizzle/blob/master/src/sizzle.js#L87
 let attrReg = /^\s*((?:\\.|[\w\u00c0-\uFFFF\-])+)\s*(?:(\S?)=\s*(?:(['"])(.*?)\3|(#?(?:\\.|[\w\u00c0-\uFFFF\-])*)|)|)\s*(i)?\]/;
 let isWhitespace = c => {
     return c === ' ' || c === '\n' || c === '\t' || c === '\f' || c === '\r';
 };
-let nonEmptyReg = /^\S+$/;
+//let nonEmptyReg = /^\S+$/;
 let atRuleSearchContent = {
     document: 1,
     supports: 1,
-    media: 1
+    media: 1,
+    container: 1,
+    when: 1,
+    else: 1
 };
 let atRuleIgnoreContent = {
     page: 1,
@@ -42,30 +45,32 @@ let quotes = {
     '"': 1,
     '\'': 1
 };
-let ignoreTags = {
-    html: 1,
-    body: 1,
-    tbody: 1,
-    thead: 1,
-    tfoot: 1,
-    tr: 1,
-    th: 1,
-    td: 1,
-    col: 1,
-    caption: 1,
-    colgroup: 1
-};
-let selectorPower = {
-    TAG: 1,
-    ATTR: 100,
-    CLASS: 10000,
-    ID: 1000000
-};
+// let ignoreTags = {
+//     html: 1,
+//     body: 1,
+//     tbody: 1,
+//     thead: 1,
+//     tfoot: 1,
+//     tr: 1,
+//     th: 1,
+//     td: 1,
+//     col: 1,
+//     caption: 1,
+//     colgroup: 1
+// };
+// let selectorPower = {
+//     TAG: 1,
+//     ATTR: 100,
+//     CLASS: 10000,
+//     ID: 1000000
+// };
 let parse = (css, file, refAtRules) => {
     let tokens = [];
     let vars = [];
     let nests = [];
-    let nestsLocker = Object.create(null);
+    //let nestsLocker = Object.create(null);
+    //let selectors = [];
+    //let selectorTokensIndex = 0;
     let current = 0;
     let max = css.length;
     let c;
@@ -80,6 +85,7 @@ let parse = (css, file, refAtRules) => {
     };
     let getNameAndGo = () => {
         let sub = css.substr(current);
+        //console.log(sub,current);
         let id;
         let matches = sub.match(nameReg);
         if (matches) {
@@ -140,57 +146,60 @@ let parse = (css, file, refAtRules) => {
         //let ec = current;
         //console.log('ignore content', css.substring(sc, ec));
     };
-    let overSelectors = 0,
-        selectorStart = 0;
-    let takeSelector = (offset) => {
-        if (!configs.checker.css || !configs.debug) return;
-        if (overSelectors > 0) { //1 标签　　100属性　10000类　1000000　id
-            if (!offset) offset = 0;
-            let s = css.substring(selectorStart, current + offset).trim();
-            s = s.replace(atNameReg, (match, selector) => {
-                if (refAtRules[match]) {
-                    return refAtRules[match];
-                }
-                return `.${selector}`;
-            });
-            if (nonEmptyReg.test(s)) { //无空格写法　如a.b.c  a[text][href] a.span.red
-                if (overSelectors < 300) { //3*ATTR;
-                    return;
-                } else if (overSelectors > selectorPower.CLASS && overSelectors < 3 * selectorPower.CLASS) {
-                    return;
-                }
-            }
-            if (overSelectors <= 303) { //3*selectorPower.ATTR + 3*selectorPower.TAG
-                overSelectors %= selectorPower.ATTR;
-            } else if (overSelectors >= selectorPower.CLASS && overSelectors <= 20200) {
-                //2*selectorPower.CLASS+2*selectorPower.ATTR
-                overSelectors %= selectorPower.CLASS;
-                overSelectors %= selectorPower.ATTR;
-                if (overSelectors && overSelectors <= 3) { //类与标签混用
-                    overSelectors = 4; //不建议混用
-                }
-            }
-            if (overSelectors && overSelectors > 3 * selectorPower.TAG) {
-                if (!nestsLocker[s]) {
-                    nestsLocker[s] = 1;
-                    nests.push(s);
-                }
-            }
-        }
-    };
-    let takeVars = (start, end) => {
-        //console.log(tokens);
+    // let overSelectors = 0,
+    //     selectorStart = 0;
+    // let takeSelector = offset => {
+    //     //if (!configs.checker.css || !configs.debug) return;
+    //     if (overSelectors > 0) { //1 标签　　100属性　10000类　1000000　id
+    //         if (!offset) offset = 0;
+    //         let s = css.substring(selectorStart, current + offset).trim();
+    //         s = s.replace(atNameReg, (match, selector) => {
+    //             if (refAtRules[match]) {
+    //                 return refAtRules[match];
+    //             }
+    //             return `.${selector}`;
+    //         });
+    //         if (nonEmptyReg.test(s)) { //无空格写法　如a.b.c  a[text][href] a.span.red
+    //             if (overSelectors < 300) { //3*ATTR;
+    //                 return;
+    //             } else if (overSelectors > selectorPower.CLASS && overSelectors < 3 * selectorPower.CLASS) {
+    //                 return;
+    //             }
+    //         }
+    //         if (overSelectors <= 303) { //3*selectorPower.ATTR + 3*selectorPower.TAG
+    //             overSelectors %= selectorPower.ATTR;
+    //         } else if (overSelectors >= selectorPower.CLASS && overSelectors <= 20200) {
+    //             //2*selectorPower.CLASS+2*selectorPower.ATTR
+    //             overSelectors %= selectorPower.CLASS;
+    //             overSelectors %= selectorPower.ATTR;
+    //             if (overSelectors && overSelectors <= 3) { //类与标签混用
+    //                 overSelectors = 4; //不建议混用
+    //             }
+    //         }
+    //         console.log(s, overSelectors);
+    //         if (overSelectors && overSelectors > 3 * selectorPower.TAG) {
+    //             if (!nestsLocker[s]) {
+    //                 nestsLocker[s] = 1;
+    //                 nests.push(s);
+    //             }
+    //         }
+    //     }
+    // };
+    let processSelectorRules = (start, end) => {
         let rules = css.substring(start, end);
+        //console.log(rules);
         let inName = true;
-        let idx = 0;
+        let idx = 0, last = 0;
         while (idx < rules.length) {
             let c = rules[idx];
             if (c == ';' ||
                 c == '\r' ||
                 c == '\n') {
                 inName = true;
+                last = idx + 1;
             } else if (c == ':') {
                 inName = false;
+                last = idx + 1;
             } else {
                 if (inName &&
                     c == '-' &&
@@ -219,10 +228,10 @@ let parse = (css, file, refAtRules) => {
         }
     };
     let processRules = () => {
-        let prev = '',
-            pseudos = [];
-        overSelectors = 0;
-        selectorStart = current;
+        let pseudos = [];
+        //let nativeNest = [];
+        // overSelectors = 0;
+        //selectorStart = current;
         while (current < max) {
             stripWhitespaceAndGo(0);
             let tc = css.charAt(current);
@@ -233,16 +242,28 @@ let parse = (css, file, refAtRules) => {
                 break;
             } else if (tc == ',') {//.title,.name {} #app{}
                 prev = '';
-                takeSelector();
-                overSelectors = 0;
+                //takeSelector();
+                //overSelectors = 0;
                 current++;
-                selectorStart = current;
+                //selectorStart = current;
             } else if (tc == '{') {
-                takeSelector();
+                //takeSelector();
                 current++;
-                let ti = css.indexOf('}', current);
+                let nestIndex = css.indexOf('@nest', current);
+                let andIndex = css.indexOf('&', current);
+                let closeIndex = css.indexOf('}', current);
+                let ti;
+                if (nestIndex != -1 &&
+                    nestIndex < closeIndex) {
+                    ti = nestIndex + 5;
+                } else if (andIndex != -1 &&
+                    andIndex < closeIndex) {
+                    ti = andIndex + 1;
+                } else if (closeIndex != -1) {
+                    ti = closeIndex;
+                    processSelectorRules(current, ti);
+                }
                 if (ti != -1) {
-                    takeVars(current, ti);
                     current = ti;
                 } else {
                     throw {
@@ -258,7 +279,7 @@ let parse = (css, file, refAtRules) => {
                 current++;
                 let sc = current;
                 let id = getNameAndGo();
-                overSelectors += tc === '.' ? selectorPower.CLASS : selectorPower.ID;
+                //overSelectors += tc === '.' ? selectorPower.CLASS : selectorPower.ID;
                 if (tc == '.') {
                     tokens.push({
                         type: prev = 'class',
@@ -289,14 +310,14 @@ let parse = (css, file, refAtRules) => {
                     type: 'attr',
                     name: matches[1],
                     start: current - 1,
-                    first: !prev,
+                    //first: !prev,
                     ctrl: matches[2],
                     quote: matches[3] || '',
                     end: current + matches[0].length,
                     value: matches[4] || matches[5],
                     ignoreCase: !!matches[6]
                 });
-                overSelectors += selectorPower.ATTR;
+                //overSelectors += selectorPower.ATTR;
                 prev = 'attr';
                 current += matches[0].length;
             } else if (tc === ':') {
@@ -315,11 +336,11 @@ let parse = (css, file, refAtRules) => {
                         current += quoted + 1;
                         pseudos.push({
                             quoted,
-                            selectorStart,
-                            overSelectors
+                            //selectorStart,
+                            //overSelectors
                         });
                         prev = '';
-                        selectorStart = current;
+                        //selectorStart = current;
                     } else {
                         let ti = css.indexOf(')', current);
                         if (ti > -1) {
@@ -339,15 +360,15 @@ let parse = (css, file, refAtRules) => {
             } else if (tc == ')') {
                 current++;
                 if (pseudos.length) {
-                    let last = pseudos.pop();
-                    takeSelector(last.quoted ? -2 : -1);
-                    overSelectors = last.overSelectors;
-                    selectorStart = last.selectorStart;
-                    takeSelector();
+                    //let last = pseudos.pop();
+                    //takeSelector(last.quoted ? -2 : -1);
+                    // overSelectors = last.overSelectors;
+                    //selectorStart = last.selectorStart;
+                    //takeSelector();
                 } else {
                     prev = '';
-                    selectorStart = current;
-                    overSelectors = 0;
+                    //selectorStart = current;
+                    // overSelectors = 0;
                 }
             } else if (nameReg.test(css.substr(current))) {
                 let sc = current;
@@ -358,9 +379,9 @@ let parse = (css, file, refAtRules) => {
                     start: sc,
                     end: current
                 });
-                if (!ignoreTags[id]) {
-                    overSelectors += selectorPower.TAG;
-                }
+                // if (!ignoreTags[id]) {
+                //     overSelectors += selectorPower.TAG;
+                // }
             } else {
                 current++;
             }
@@ -373,11 +394,37 @@ let parse = (css, file, refAtRules) => {
             let start = current;
             current++;
             let name = getNameAndGo();
-            if (atRuleSearchContent.hasOwnProperty(name)) {
+            if (name == 'property') {
+                stripWhitespaceAndGo(0);
+                let start = current;
+                let next = getNameAndGo();
+                vars.push({
+                    name: next,
+                    start,
+                    end: current
+                });
+                skipAtRuleContent();
+            } else if (atRuleSearchContent.hasOwnProperty(name)) {
                 skipAtRuleUntilLeftBrace();
                 processRules();
             } else if (atRuleIgnoreContent.hasOwnProperty(name)) {
                 //let start = current;
+                if (name == 'keyframes' ||
+                    name == '-webkit-keyframes' ||
+                    name == '-moz-keyframes' ||
+                    name == '-ms-keyframes' ||
+                    name == '-o-keyframes') {
+                    stripWhitespaceAndGo(0);
+                    let start = current;
+                    let key = getNameAndGo();
+                    tokens.push({
+                        type: 'at-rule',
+                        key: 'keyframes',
+                        name: key,
+                        start,
+                        end: current
+                    });
+                }
                 let cStart = current;
                 skipAtRuleContent();
                 if (name == 'global') {
@@ -399,10 +446,12 @@ let parse = (css, file, refAtRules) => {
             processRules();
         }
     }
+    //console.log(JSON.stringify(selectors));
     return {
         vars,
         tokens,
-        nests
+        nests,
+        //selectors
     };
 };
 module.exports = (css, file, refAtRules) => {

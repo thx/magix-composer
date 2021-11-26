@@ -8,10 +8,13 @@ let expect = (source, result) => {
     }
 };
 
-expect(generic.trimParentheses('((e)||e)'),'(e)||e');
-expect(generic.trimParentheses('(e)||e)'),'(e)||e)');
-expect(generic.trimParentheses(' ( (e)||  e ) '),'(e)||  e');
-expect(generic.trimParentheses('(((e)||e))'),'(e)||e');
-expect(generic.trimParentheses('(a||b)||(c||d)'),'(a||b)||(c||d)');
-expect(generic.trimParentheses('(((a||b)||(c||d)))'),'(a||b)||(c||d)');
-expect(generic.trimParentheses('(()()())'),'()()()');
+expect(generic.trimParentheses('((e)||e)'), '(e)||e');
+expect(generic.trimParentheses('(e)||e)'), '(e)||e)');
+expect(generic.trimParentheses(' ( (e)||  e ) '), '(e)||  e');
+expect(generic.trimParentheses('(((e)||e))'), '(e)||e');
+expect(generic.trimParentheses('(a||b)||(c||d)'), '(a||b)||(c||d)');
+expect(generic.trimParentheses('(((a||b)||(c||d)))'), '(a||b)||(c||d)');
+expect(generic.trimParentheses('(()()())'), '()()()');
+console.log(generic.splitExpr('list.abc||def.zz||a[b||c]'));
+
+console.log(generic.splitParams(`[a,b,c,[d,e]],a,[1,2,3],f,`));

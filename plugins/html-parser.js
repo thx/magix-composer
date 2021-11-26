@@ -1,6 +1,5 @@
 
 let { selfCloseTags: empty } = require('./html-tags');
-let slog = require('./util-log');
 let chalk = require('chalk');
 let IS_REGEX_CAPTURING_BROKEN = false;
 'x'.replace(/x(.)?/g, function (m, g) {
@@ -39,8 +38,8 @@ let parseStartTag = (input, pos) => {
             pos += attr[0].length;
             match.attrs.push(attr);
             match.attrsMap[attr[1]] = attr[3];
-            if (attr[5] && SBCSpace.test(attr[5])) {
-                slog.ever(chalk.magenta('[MXC Tip(html-parser)] You use a SCB spance here:"' + attr[0] + '"'));
+            if (attr[3] && SBCSpace.test(attr[3])) {
+                console.log(chalk.magenta('[MXC Tip(html-parser)] You use a SCB spance[\\u3000] here:"' + attr[0] + '"'));
             }
         }
         if (end) {
@@ -201,11 +200,14 @@ let parser = (html, handler) => {
         }
 
         if (handler.chars) {
-            handler.chars(text, pos, pos + text.length);
+            handler.chars(text, {
+                start: pos,
+                end: pos + text.length
+            });
         }
         pos += text.length;
         if (html === last) {
-            throw new Error('[MXC Error(html-parser)] HTML Parse Error: ' + html);
+            throw new Error('[MXC Error(html-parser)] HTML parse error: ' + html);
         }
     }
 };

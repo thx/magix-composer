@@ -17,11 +17,14 @@ let tmplStatic = require('./tmpl-static');
 let unmatchChecker = require('./checker-tmpl-unmatch');
 let tmplVars = require('./tmpl-vars');
 let md5 = require('./util-md5');
-let slog = require('./util-log');
 let tmplQuick = require('./tmpl-quick');
 let cssChecker = require('./checker-css');
 let tmplChecker = require('./checker-tmpl');
-let { revisableGReg } = require('./util-const');
+let tmplSource = require('./tmpl-tag-source');
+let { revisableGReg,
+    tmplGlobalDataRoot,
+    revisableTail } = require('./util-const');
+let regexp = require('./util-rcache');
 
 let commentReg = /<!--[\s\S]*?-->/g;
 let htmlCommentCelanReg = /<!--[\s\S]*?-->/g;
@@ -33,125 +36,154 @@ let stringReg = /\x17([^\x17]*?)\x17/g;
 let unsupportCharsReg = /[\x00-\x07\x11-\x19\x1e\x1f\x10]/g;
 let globalTmplRootReg = /[\x03\x06]\./g;
 let globalRootReg = /\x03/g;
-let commandAnchorRecover = (tmpl, refTmplCommands) => tmplCmd.recover(tmpl, refTmplCommands)
-    .replace(globalTmplRootReg, '')
-    .replace(globalRootReg, '$$$$')
-    .replace(removeVdReg, '')
-    .replace(removeIdReg, '')
-    .replace(removeAsReg, '')
-    .replace(stringReg, '$1');
-
+let commandAnchorRecover = (tmpl, refTmplCommands) => tmplCmd.recover(tmpl, refTmplCommands).replace(stringReg, '$1');
+//let refKeyPrefixReg = /\x00xl\x00/g;
+let idRemove = tmpl => {
+    return tmpl.replace(globalTmplRootReg, '')
+        .replace(globalRootReg, regexp.encode(tmplGlobalDataRoot))
+        .replace(removeVdReg, '')
+        .replace(removeIdReg, '')
+        .replace(removeAsReg, '')
+    //.replace(refKeyPrefixReg, '');
+}
 let brReg = /(?:\r\n|\r|\n)/;
 let brPlaceholder = m => {
     let count = m.split(brReg).length;
     return new Array(count).join('\n');
 };
-let processTmpl = (fileContent, cache, cssNamesMap, e, reject, lang, outString) => {
-    if (!cache[fileContent]) {
-        let file = e.srcHTMLFile;
-        if (configs.debug && unsupportCharsReg.test(fileContent)) {
-            slog.log(chalk.red(`[MXC Error(tmpl)] unsupport character : ${unsupportCharsReg.source}`), 'at', chalk.magenta(e.shortHTMLFile));
-            reject(new Error('[MXC Error(tmpl)] unsupport character'));
-            return;
-        }
-        e.templateLang = lang;
-        try {
-            fileContent = configs.compileTmplStart(fileContent, e);
-        } catch (ex) {
-            slog.ever(chalk.red('[MXC Error(tmpl)] compile template error ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
-            ex.message += ' at ' + e.shortHTMLFile;
-            reject(ex);
-            return;
-        }
-        fileContent = fileContent.replace(commentReg, brPlaceholder);
+let descLength = (a, b) => b.length - a.length;
+let recoverRevisableStrings = (tmpl, values) => {
+    values.sort(descLength);
+    for (let v of values) {
+        tmpl = tmpl.replace(v, v.slice(1));
+    }
+    return tmpl;
+};
+let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, quickStaticVars) => {
+    e.revisableStrings = [];
+    let file = e.srcHTMLFile;
+    let shared = {};
+    if (configs.debug && unsupportCharsReg.test(fileContent)) {
+        console.log(chalk.red(`[MXC Error(tmpl)] unsupport character : ${unsupportCharsReg.source}`), 'at', chalk.magenta(e.shortHTMLFile));
+        reject(new Error('[MXC Error(tmpl)] unsupport character'));
+        return;
+    }
+    e.templateLang = lang;
+    try {
+        fileContent = configs.compileTmplStart(fileContent, shared, e);
+    } catch (ex) {
+        console.log(chalk.red('[MXC Error(tmpl)] compile template error ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
+        ex.message += ' at ' + e.shortHTMLFile;
+        reject(ex);
+        return;
+    }
+    fileContent = tmplSource.translate(fileContent, e);
+    fileContent = fileContent.replace(commentReg, brPlaceholder);
+    try {
+        tmplArt.check(fileContent, e);
+    } catch {
+        return;
+    }
+    fileContent = tmplQuick.preProcess(fileContent, e);
+    fileContent = tmplArt(fileContent, e);
+    let srcContent = fileContent;
+    try {
+        fileContent = await tmplCutsomTag.process(fileContent, {
+            moduleId: e.moduleId,
+            pkgName: e.pkgName,
+            srcOwnerHTMLFile: file,
+            shortOwnerHTMLFile: e.shortHTMLFile
+        }, e);
+    } catch (ex) {
+        console.log(chalk.red('MXC-Error(tmpl) ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
+        ex.message += ' at ' + e.shortHTMLFile;
+        reject(ex);
+        return;
+    }
+    if (srcContent != fileContent) {
         tmplArt.check(fileContent, e);
         fileContent = tmplQuick.preProcess(fileContent, e);
         fileContent = tmplArt(fileContent, e);
-        if (configs.debug) {
-            try {
-                unmatchChecker(fileContent, e);
-            } catch (ex) {
-                slog.ever(chalk.red(ex.message), 'at', chalk.magenta(e.shortHTMLFile));
-                ex.message += ' at ' + e.shortHTMLFile;
-                reject(ex);
-                return;
-            }
-        }
-        let srcContent = fileContent;
+    }
+    if (configs.debug) {
         try {
-            fileContent = tmplCutsomTag.process(fileContent, {
-                moduleId: e.moduleId,
-                pkgName: e.pkgName,
-                srcOwnerHTMLFile: file,
-                shortOwnerHTMLFile: e.shortHTMLFile
-            }, e);
+            unmatchChecker(fileContent, e);
         } catch (ex) {
-            slog.ever(chalk.red('MXC-Error(tmpl) ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
+            console.log(chalk.red(ex.message), 'at', chalk.magenta(e.shortHTMLFile));
             ex.message += ' at ' + e.shortHTMLFile;
             reject(ex);
             return;
         }
-        //console.log('xxxx',JSON.stringify(fileContent),e);
-        if (srcContent != fileContent) {
-            tmplArt.check(fileContent, e);
-            fileContent = tmplQuick.preProcess(fileContent, e);
-            fileContent = tmplArt(fileContent, e);
-        }
-        if (configs.debug) {
-            try {
-                unmatchChecker(fileContent, e);
-            } catch (ex) {
-                slog.ever(chalk.red(ex.message), 'at', chalk.magenta(e.shortHTMLFile));
-                ex.message += ' at ' + e.shortHTMLFile;
-                reject(ex);
-                return;
-            }
-        }
-
-        fileContent = fileContent.replace(htmlCommentCelanReg, '').trim();
-        fileContent = tmplCmd.compile(fileContent);
-        //console.log(fileContent);
-        let refTmplCommands = Object.create(null);
-        try {
-            fileContent = tmplVars.process(fileContent, e);
-        } catch (ex) {
-            reject(ex);
-        }
-        //console.log(fileContent);
-        fileContent = tmplCmd.store(fileContent, refTmplCommands); //模板命令移除，防止影响分析
-        if (!configs.debug) {
-            fileContent = fileContent.replace(revisableGReg, m => {
-                let src = tmplCmd.recover(m, refTmplCommands);
-                tmplChecker.checkStringRevisable(m, src, e);
-                return md5(m, 'revisableString', configs.revisableStringPrefix);
-            });
-        }
-        fileContent = configs.compileTmplEnd(fileContent);
-
-        //console.log(JSON.stringify(fileContent),refTmplCommands);
-        fileContent = tmplAttr.process(fileContent, e, refTmplCommands, cssNamesMap);
-        try {
-            fileContent = tmplCmd.tidy(fileContent);
-        } catch (ex) {
-            slog.ever(chalk.red('[MXC Error(tmpl)] minify html error : ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
-            reject(ex);
-            return;
-        }
-        if (!outString) {
-            fileContent = tmplStatic(fileContent, e.shortHTMLFile);
-        }
-        cache[fileContent] = commandAnchorRecover(fileContent, refTmplCommands);
     }
-    return cache[fileContent];
+
+    fileContent = fileContent.replace(htmlCommentCelanReg, '').trim();
+    fileContent = tmplCmd.compile(fileContent);
+    //console.log(fileContent);
+
+    //console.log(fileContent);
+    let refTmplCommands = Object.create(null);
+    try {
+        fileContent = tmplVars.process(fileContent, e);
+    } catch (ex) {
+        reject(ex);
+    }
+
+    //console.log(fileContent);
+    fileContent = tmplCmd.store(fileContent, refTmplCommands); //模板命令移除，防止影响分析
+    //console.log(fileContent);
+    fileContent = fileContent.replace(revisableGReg, m => {
+        //console.log(m);
+        let src = tmplCmd.recover(m, refTmplCommands);
+        tmplChecker.checkStringRevisable(m, src, e);
+        if (configs.debug) {
+            return m.slice(0, -1) + revisableTail + '}';
+        }
+        let r = '\x12' + md5(m, 'revisableString', configs.revisableStringPrefix);
+        e.revisableStrings.push(r);
+        return r;
+    });
+    fileContent = configs.compileTmplEnd(fileContent, shared, e);
+
+    //console.log(JSON.stringify(fileContent),refTmplCommands);
+    fileContent = tmplAttr.process(fileContent, e, refTmplCommands, cssNamesMap);
+    //console.log(fileContent);
+    try {
+        //console.log(fileContent);
+        fileContent = tmplCmd.tidy(fileContent);
+    } catch (ex) {
+        console.log(chalk.red('[MXC Error(tmpl)] minify html error : ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
+        reject(ex);
+        return;
+    }
+    //console.log(fileContent);
+    if (!outString) {
+        fileContent = tmplStatic(fileContent, e.shortHTMLFile, e.shortHTMLUId);
+    }
+    if (outString) {
+        fileContent = commandAnchorRecover(fileContent, refTmplCommands);
+        fileContent = idRemove(fileContent);
+        return JSON.stringify(fileContent);
+    }
+    fileContent = commandAnchorRecover(fileContent, refTmplCommands);
+    //console.log(JSON.stringify(fileContent));
+    fileContent = recoverRevisableStrings(fileContent, e.revisableStrings);
+    //console.log(fileContent);
+    fileContent = idRemove(fileContent);
+    let { source, statics } = tmplQuick.process(fileContent, e);
+    quickStaticVars.push(...statics);
+    //console.log(JSON.stringify(source));
+    return source;
 };
 module.exports = e => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         let cssNamesMap = e.cssNamesMap,
             from = e.from,
             moduleId = e.moduleId,
-            fileContentCache = Object.create(null),
             quickStaticVars = [];
+        //console.log(e);
+        //debugger;
         //仍然是读取view.js文件内容，把里面@到的文件内容读取进来
+        let promises = [];
         e.content = e.content.replace(configs.fileTmplReg, (match, quote, ctrl, name, ext) => {
             name = atpath.resolvePath(name, moduleId);
             let file = path.resolve(path.dirname(from) + sep + name + '.' + ext);
@@ -169,21 +201,18 @@ module.exports = e => {
                 let lang = singleFile ? e.contentInfo.templateLang : ext;
                 e.htmlModuleId = utils.extractModuleId(file);
                 e.srcHTMLFile = file;
-                e.shortHTMLFile = file.replace(configs.moduleIdRemovedPath, '').substring(1);
+                e.shortHTMLFile = file.replace(configs.commonFolder, '').substring(1);
                 if (ext != lang) {
-                    slog.ever(chalk.red('[MXC Tip(tmpl)] conflicting template language'), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.magenta(match + ' and ' + e.contentInfo.templateTag));
+                    console.log(chalk.red('[MXC Tip(tmpl)] conflicting template language'), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.magenta(match + ' and ' + e.contentInfo.templateTag));
                 }
-                let ouputString = ctrl == 'compiled';
-                let html = processTmpl(fileContent, fileContentCache, cssNamesMap, e, reject, lang, ouputString);
-                if (ouputString) {
-                    return JSON.stringify(html);
-                }
-                let { source, statics } = tmplQuick.process(html, e);
-                quickStaticVars = quickStaticVars.concat(statics);
-                return source;
+                let outputString = ctrl == 'compiled';
+                promises.push(processTmpl(fileContent, cssNamesMap, e, reject, lang, outputString, quickStaticVars));
+                return match;
             }
             return quote + 'unfound file:' + name + '.' + ext + quote;
         });
+        let data = await Promise.all(promises);
+        e.content = e.content.replace(configs.fileTmplReg, () => data.shift());
         e.quickStaticVars = quickStaticVars;
         resolve(e);
     });

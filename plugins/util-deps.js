@@ -1,6 +1,7 @@
 /*
     文件依赖信息对象，如index.js中@了index.css，则index.css被修改时，我们要编译index.js，即被依赖的模块变化要让有依赖的模块编译一次
  */
+let cssChecker = require('./checker-css');
 let fileDependencies = {};
 let configDependencies = {};
 let context;
@@ -29,6 +30,7 @@ let runFileDepend = file => {
     let promises = [];
     if (list) {
         for (let p in list) {
+            cssChecker.resetByHost(p);
             promises.push(context.process(p, list[p], true));
         }
     }

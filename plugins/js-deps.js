@@ -8,7 +8,7 @@
 //b=require('cc');
 let jsModuleParser = require('./js-module-parser');
 let configs = require('./util-config');
-let atpath = require('./util-atpath');
+//let atpath = require('./util-atpath');
 let { styleImportReg } = require('./util-const');
 let { magixModuleIds } = configs;
 let lastMagixMouleId = magixModuleIds[magixModuleIds.length - 1];
@@ -17,7 +17,7 @@ let importReg = /import\s+(?:([^;\r\n]+?)from\s+)?(['"])([^'"]+)\2([\r\n;,])?/;
 let requireReg = /(?:((?:var|let|const)\s+|,|\s|^)\s*([^=\s]+)\s*=\s*)?\brequire\s*\(\s*(['"])([^\(\)]+)\3\s*\)([\r\n;,\s])?/;
 let dimportReg = /import\s*\(([^\(\);\r\n]+)\)/;
 let noncharReg = /[^a-zA-Z\d]/g;
-let remoteUrl = /^https?:\/\//i;
+let remoteUrl = /^https?:(?:[\/\\]{2})?/i;
 module.exports = {
     process(e) {
         let deps = [];

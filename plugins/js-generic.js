@@ -72,6 +72,82 @@ module.exports = {
         } while (check.length);
         return expr.substring(trimCount, expr.length - trimCount).trim();
     },
+    splitString(expr) {
+        let result = [];
+        let temp = '';
+        let max = expr.length;
+        let i = 0,
+            c, opened = 0,
+            slash = 0;
+        while (i < max) {
+            c = expr.charAt(i);
+            if (slash) {
+                slash = 0;
+                temp += c;
+                i++;
+                continue;
+            }
+            if (c == '\'') {
+                if (!slash) {
+                    if (opened) {
+                        opened = 0;
+                        result.push(temp + c);
+                        temp = '';
+                    } else {
+                        opened = 1;
+                        if (temp) {
+                            result.push(temp);
+                        }
+                        temp = c;
+                    }
+                }
+            } else if (c == '\\') {
+                if (slash) {
+                    slash = 0;
+                } else {
+                    slash = 1;
+                }
+                temp += c;
+            } else {
+                temp += c;
+            }
+            i++;
+        }
+        return result;
+    },
+    splitParams(expr) {//拆分参数，如[a,b,c],d,[e,f,g]
+        let stack = [];
+        let temp = '';
+        let max = expr.length;
+        let i = 0,
+            c, opened = 0;
+        while (i < max) {
+            c = expr.charAt(i);
+            if (c == ',') {
+                if (!opened) {
+                    if (temp) {
+                        stack.push(temp);
+                    }
+                    temp = '';
+                } else {
+                    temp += c;
+                }
+            } else if (c == '[') {
+                opened++;
+                temp += c;
+            } else if (c == ']') {
+                opened--;
+                temp += c;
+            } else {
+                temp += c;
+            }
+            i++;
+        }
+        if (temp) {
+            stack.push(temp);
+        }
+        return stack;
+    },
     splitExpr(expr) { //拆分表达式，如"list[i].name[object[key[value]]]" => ["list", "[i]", "name", "[object[key[value]]]"]
         expr = this.trimParentheses(expr);
         let stack = [];
@@ -145,22 +221,22 @@ module.exports = {
         str = '(' + str.trim() + ')';
         let ast = acorn.parse(str);
         let modifiers = [];
-        let processString = node => {
-            if (stringReg.test(node.raw)) {
-                let q = node.raw.charAt(0);
-                let value = node.raw.slice(1, -1);
-                if (q == '"') {
-                    q = '\'';
-                    value = value.replace(/'/g, '\\\'');
-                }
-                value = escapeQ(value);
-                modifiers.push({
-                    start: node.start,
-                    end: node.end,
-                    value: q + value + q
-                });
-            }
-        };
+        // let processString = node => {
+        //     if (stringReg.test(node.raw)) {
+        //         let q = node.raw.charAt(0);
+        //         let value = node.raw.slice(1, -1);
+        //         if (q == '"') {
+        //             q = '\'';
+        //             value = value.replace(/'/g, '\\\'');
+        //         }
+        //         value = escapeQ(value);
+        //         modifiers.push({
+        //             start: node.start,
+        //             end: node.end,
+        //             value: q + value + q
+        //         });
+        //     }
+        // };
         let pushExpressions = e => {
             if (e.type == 'Identifier' ||
                 e.type == 'MemberExpression' ||
@@ -186,9 +262,9 @@ module.exports = {
             Property(node) {
                 let key = node.key;
                 let value = node.value;
-                if (key.type == 'Literal') {
-                    processString(key);
-                }
+                // if (key.type == 'Literal') {
+                //     //processString(key);
+                // }
                 if (node.shorthand) {
                     modifiers.push({
                         start: node.end,
@@ -211,11 +287,23 @@ module.exports = {
                     pushExpressions(e);
                 }
             },
-            Literal: processString
+            //Literal: processString
         });
         modifiers.sort((a, b) => { //根据start大小排序，这样修改后的fn才是正确的
+            if (a.start == b.start) {
+                return a.end - b.end;
+            }
             return a.start - b.start;
         });
+        //let pre = null;
+        // for (let i = modifiers.length, m; i--;) {
+        //     let m = modifiers[i];
+        //     if (pre != null &&
+        //         pre == m.start) {
+        //         modifiers.splice(i, 1);
+        //     }
+        //     pre = m.start;
+        // }
         for (let i = modifiers.length, m, pm, offset; i-- > 0;) {
             m = modifiers[i];
             offset = m.value.length - m.end + m.start;
@@ -231,5 +319,20 @@ module.exports = {
             str = str.substring(0, m.start) + m.value + str.substring(m.end);
         }
         return '"' + startChar + str.slice(1, -1) + '"';
+    },
+    hasRefValue(str) {
+        str = '(' + str.trim() + ')';
+        let ast = acorn.parse(str);
+        let has = false,
+            test = node => {
+                has = true;
+            };
+        acorn.walk(ast, {
+            ObjectPattern: test,
+            ArrayPattern: test,
+            ObjectExpression: test,
+            ArrayExpression: test
+        });
+        return has;
     }
 };

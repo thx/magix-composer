@@ -1,14 +1,19 @@
 let fs = require('fs');
 let path = require('path');
-let { galleryFileNames, galleryFileSuffixes } = require('./util-const');
-module.exports = (root, prefix) => {
+let { galleryFileNames,
+    galleryFileSuffixes } = require('./util-const');
+module.exports = async (root, prefix) => {
     let cfg = {},
         configFile = '';
     for (let fn of galleryFileNames) {
         for (let s of galleryFileSuffixes) {
             configFile = path.join(root, fn + '.' + s);
             if (fs.existsSync(configFile)) {
-                cfg = require(configFile);
+                if (s == 'mjs') {
+                    cfg = (await import(configFile)).default;
+                } else {
+                    cfg = require(configFile);
+                }
                 break;
             }
         }

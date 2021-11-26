@@ -5,7 +5,6 @@ let chalk = require('chalk');
 let configs = require('./util-config');
 let htmlminifier = require('html-minifier');
 let jsGeneric = require('./js-generic');
-let slog = require('./util-log');
 let { htmlminifier: cHTMLMinifier,
     tmplStoreIndexKey,
     microTmplCommand } = require('./util-const');
@@ -14,13 +13,14 @@ let anchor = '\x07';
 let tmplCommandAnchorCompressReg = /(\x07\d+\x07)\s+(?=[<>])/g;
 let tmplCommandAnchorCompressReg2 = /([<>])\s+(\x07\d+\x07)/g;
 let tmplCommandAnchorReg = /\x07\d+\x07/g;
+let tmplCommandTestReg = /\x07\d+\x07/;
 let emptyCmdReg = /<%\s*%>/g;
 let bindReg2 = /(\s*)<%:([\s\S]+?)%>(\s*)/g;
 
-let cmdOutReg = /^<%([@=:])?([\s\S]*)%>$/;
+let cmdOutReg = /^<%([#=:!~])?([\s\S]*)%>$/;
 let artCtrlsReg = /^(?:<%'\x17?(\d+)\x11([^\x11]+)\x11\x17?'%>)?(<%[\s\S]+?%>)$/;
 let artCtrlsReg1 = /<%'\d+\x11([^\x11]+)\x11'%>(<%[\s\S]+?%>)/g;
-
+let isLineArtCtrlsReg = /^<%'(\d+)\x11([^\x11]+)\x11'%>$/;
 module.exports = {
     compile(tmpl) {
         //特殊处理绑定事件及参数
@@ -34,8 +34,9 @@ module.exports = {
                 try {
                     fns = ',' + jsGeneric.parseObject(fns, '\x17', '\x18');
                 } catch (ex) {
-                    slog.ever(chalk.red('check:' + fns));
+                    console.log(chalk.red('check:' + fns));
                 }
+                //console.log(JSON.stringify(fns));
                 expr = expr.substring(0, leftBrace).trim();
                 if (expr[expr.length - 1] == '(') {
                     expr = expr.slice(0, -1);
@@ -47,11 +48,6 @@ module.exports = {
             } else {
                 let temp = expr.split('&');
                 if (temp.length > 1) {
-                    // if (temp.length != 2) {
-                    //     throw new Error('[MXC Error(tmpl-cmd)] unsupport ' + m);
-                    // }
-                    // let bind = temp[0].trim();
-                    // let rule = temp[1].trim();
                     let bind = temp.shift().trim();
                     let rule = temp.join('&');
                     if (rule.startsWith('(') && rule.endsWith(')')) {
@@ -64,6 +60,30 @@ module.exports = {
         });
         tmpl = tmpl.replace(emptyCmdReg, '');
         return tmpl;
+    },
+    hasCmd(tmpl) {
+        return tmplCommandTestReg.test(tmpl);
+    },
+    isLine(tmpl) {
+        return isLineArtCtrlsReg.test(tmpl);
+    },
+    getLineAndContent(tmpl) {
+        let m = tmpl.match(isLineArtCtrlsReg);
+        if (m) {
+            return {
+                line: m[1],
+                content: m[2]
+            }
+        }
+        return {
+            line: -1,
+            content: 'error'
+        };
+    },
+    getCmds(tmpl) {
+        let cmds = [];
+        tmpl.replace(tmplCommandAnchorReg, _ => cmds.push(_));
+        return cmds;
     },
     store(tmpl, dataset, reg) { //保存模板引擎命令
         let idx = dataset[tmplStoreIndexKey] || 0;
@@ -83,7 +103,9 @@ module.exports = {
         return tmpl;
     },
     tidy(tmpl) { //简单压缩
+        //console.log('before', tmpl);
         tmpl = htmlminifier.minify(tmpl, cHTMLMinifier);
+        //console.log('after', tmpl);
         if (cHTMLMinifier.collapseWhitespace) {
             tmpl = tmpl.replace(tmplCommandAnchorCompressReg, '$1');
             tmpl = tmpl.replace(tmplCommandAnchorCompressReg2, '$1$2');
@@ -97,6 +119,15 @@ module.exports = {
                 value = processor(value);
             }
             return value;
+        });
+    },
+    queryCmdsOfTmpl(tmpl, refTmplCommands, processor) {
+        tmpl.replace(tmplCommandAnchorReg, match => {
+            let value = refTmplCommands[match];
+            if (processor) {
+                value = processor(value);
+            }
+            refTmplCommands[match] = value;
         });
     },
     buildCmd(line, operate, art, content) {
@@ -124,7 +155,7 @@ module.exports = {
             return {
                 isArt: !!art,
                 line,
-                art,
+                art: art || ocm[2],
                 origin: art || old,
                 succeed: true,
                 operate: ocm[1] || '',
@@ -138,12 +169,18 @@ module.exports = {
         };
     },
     extractRefContent(cmd) {
-        let idx = cmd.indexOf(`,'\x1e`);
+        let idx = cmd.indexOf(`,\x00xl\x00'`);
         if (idx > -1) {
             return {
                 succeed: true,
                 vars: cmd.substring(0, idx),
                 key: cmd.substring(idx + 1)
+            };
+        } else {
+            return {
+                succeed: true,
+                vars: cmd,
+                key: ''
             };
         }
         return {
