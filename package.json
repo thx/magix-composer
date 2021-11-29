@@ -16,7 +16,7 @@
     "offline"
   ],
   "dependencies": {
-    "acorn": "8.5.x",
+    "acorn": "8.6.x",
     "acorn-walk": "8.2.x",
     "autoprefixer": "10.4.x",
     "chalk": "4.1.x",
@@ -24,8 +24,8 @@
     "html-entities-decoder": "1.0.x",
     "html-minifier": "4.0.x",
     "less": "4.1.x",
-    "postcss": "8.3.x",
-    "typescript": "4.4.x"
+    "postcss": "8.4.x",
+    "typescript": "4.5.x"
   },
   "author": "xinglie <https://github.com/xinglie>",
   "license": "MIT",

@@ -6,6 +6,7 @@ let configs = require('./util-config');
 let tmplCmd = require('./tmpl-cmd');
 let cssRead = require('./css-read');
 let cssTransform = require('./css-transform');
+let deps = require('./util-deps');
 /**
  * let str=`base64@:./path/to/file.ext`
  * 
@@ -121,6 +122,9 @@ module.exports = e => {
             if (!locker[m]) {
                 tasksCount++;
                 locker[m] = 'waiting file read';
+                if (e.from && e.to) {
+                    deps.addFileDepend(file, e.from, e.to);
+                }
                 tasks.push([m, file, ctrl, name]);
             }
         });
