@@ -866,7 +866,7 @@ let parser = (tmpl, e) => {
                     }
                 }
                 if (token.isMxView &&
-                    !addFromOrTo &&
+                    //!addFromOrTo &&
                     !token.hasMxOwner) {
                     token.hasMxOwner = true;
                     aList.unshift({
@@ -1379,6 +1379,7 @@ let process = (src, e) => {
                     outText = '$text';
                     safeguard = !text.hasSnippet;
                 }
+                //console.log(text,outText);
                 //console.log(node);
                 //let xHTML = node.isXHTML ? '1' : '0';
                 outText += node.isXHTML ? ',1' : '';
@@ -1970,7 +1971,7 @@ let process = (src, e) => {
                         exist = {
                             count: 0,
                             level: [],
-                            html: encodeSlashRegExp(node.innerHTML),
+                            html: attrMap.escapeSlashAndBreak(node.innerHTML),
                             key: staticCounter++
                         };
                         inlineStaticHTML[node.innerHTML] = exist;
@@ -2199,7 +2200,6 @@ let process = (src, e) => {
     // }
     let innerCode = snippets.join('');
     innerCode = combineSamePush(innerCode, combinePushed);
-    //console.log(innerCode);
     innerCode = innerCode.replace(inlineStaticHTMLReg, (_, c) => {
         let exist = inlineStaticHTML['\x00' + c];
         if (exist) {

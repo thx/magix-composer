@@ -35,9 +35,11 @@ module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
     };
     let classResult = (m, h, key, fromCmd) => {
         if (numReg.test(key)) return m; //纯数字的是模板命令，选择器不可能是纯数字
+        //console.log(key,JSON.stringify(key),cssNamesMap[key]);
         let r = cssNamesMap[key];
         if (!fromCmd) {
-            if (configs.checker.tmplClassCheck(key)) {
+            if (configs.checker.tmplClassCheck &&
+                configs.checker.tmplClassCheck(key)) {
                 selectors[key] = 1;
             }
             checkDuplicate(key);

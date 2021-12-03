@@ -77,7 +77,7 @@ module.exports = e => {
                         }
                         if (type == 'vars') {
                             if (varsIsGlobal) {
-                                cssChecker.storeStyleGlobalVars(e.from, selectors);
+                                //cssChecker.storeStyleGlobalVars(e.from, selectors);
                             } else {
                                 let dest = gInfo.declaredFiles.vars[selectors];
                                 if (dest) {
@@ -139,7 +139,7 @@ module.exports = e => {
                                 let { isGlobal, key: k2 } = cssTransform.processVar(key);
                                 if (isGlobal) {
                                     r = k2;
-                                    cssChecker.storeStyleGlobalVars(lf, key);
+                                    //cssChecker.storeStyleGlobalVars(lf, key);
                                 } else {
                                     //cssChecker.storeStyleGlobalVars(lf, key);
                                     return m;
@@ -188,6 +188,9 @@ module.exports = e => {
                         //从缓存中获取当前文件的信息
                         //如果不存在就返回一个不存在的提示
                         if (!r.exists) {
+                            if (configs.selectorSilentErrorCss) {
+                                return m;
+                            }
                             m = name + ext;
                             cssChecker.storeUnexist(e.from, m);
                             if (key) {
@@ -271,7 +274,8 @@ module.exports = e => {
                             replacement = '';
                             tail = '';
                         } else if (key) { //仅读取文件中的某个名称
-                            let c;
+                            let c,
+                                postfix = '';
                             cssVarReg.lastIndex = 0;
                             if (cssVarReg.test(key)) {
                                 cssVarReg.lastIndex = 0;
@@ -314,6 +318,11 @@ module.exports = e => {
                                     storeHostUsed('atRules', scopedStyle, file, selector);
                                 }
                             } else {
+                                let di = key.indexOf('--${');
+                                if (di > 0) {
+                                    postfix = key.substring(di + 2);
+                                    key = key.substring(0, di + 2);
+                                }
                                 c = cssNamesMap[key];
                                 let silent = false;
                                 if (!c) {
@@ -328,7 +337,7 @@ module.exports = e => {
                                     storeHostUsed('selectors', scopedStyle, file, key);
                                 }
                             }
-                            replacement = q + c + q;
+                            replacement = q + c + postfix + q;
                         } else { //输出整个css文件内容
                             let uniqueKey = '';
                             if (prefix != 'compiled') {

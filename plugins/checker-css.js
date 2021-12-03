@@ -275,16 +275,17 @@ module.exports = {
             let prefixes = [...configs.cssGlobalVarPrefixes, consts.cssScopedVarPrefix];
             for (let prefix of prefixes) {
                 if (vars.startsWith(prefix)) {
-                    for (let host in FileStylesGlobalVarUsed) {
-                        let dest = FileStylesGlobalVarUsed[host];
-                        if (!usedGlobalVars[host]) {
-                            usedGlobalVars[host] = Object.create(null);
-                        }
-                        if (dest[vars]) {
-                            usedGlobalVars[host][vars] = ItemDeclared;
-                            result = true;
-                        }
-                    }
+                    result = true;
+                    // for (let host in FileStylesGlobalVarUsed) {
+                    //     let dest = FileStylesGlobalVarUsed[host];
+                    //     if (!usedGlobalVars[host]) {
+                    //         usedGlobalVars[host] = Object.create(null);
+                    //     }
+                    //     if (dest[vars]) {
+                    //         usedGlobalVars[host][vars] = ItemDeclared;
+                    //         result = true;
+                    //     }
+                    // }
                     break;
                 }
             }

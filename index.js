@@ -87,8 +87,6 @@ module.exports = {
                 src: 'revisableStringMap'
             }, {
                 src: 'components'
-            }, {
-                src: 'checker'
             }];
             let merge = (aim, src) => {
                 if (utils.isObject(src)) {

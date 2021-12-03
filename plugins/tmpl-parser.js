@@ -229,6 +229,9 @@ module.exports = (input, htmlFile, walk) => {
         end(tag, { start, end, attrs }) {
             //console.log('end', tag);
             let token = ctrls.pop();
+            if (!token) {
+                throw new Error('[MXC-Error(tmpl-parser)] bad html near ' + tag + ' at ' + htmlFile);
+            }
             if (token.tag == tmplGroupTag &&
                 !token.groupKeyNode &&
                 !token.groupUseNode) {

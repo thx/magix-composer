@@ -11,13 +11,14 @@ let reservedReplacer = {
     top: 1,
     bottom: 1,
     src: 1,
-    global: 1,
     ref: 1,
     names: 1,
     str: 1,
     base64: 1,
     html: 1,
-    style: 1
+    style: 1,
+    as: 1,
+    compiled: 1
 };
 module.exports = () => {
     if (!configs.$inited) {

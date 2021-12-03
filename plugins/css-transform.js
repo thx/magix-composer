@@ -405,7 +405,6 @@ let varRefProcessor = (relateFile, file, ext, name, e) => {
             let sname = e.globalCssVarsMap[name];
             if (!sname) {
                 sname = silent ? storeAtReg(e.origin) : `"not found ${name} from @{${file}${ext}}"`;
-                console.log(sname);
                 cssChecker.storeStyleUsed(relateFile, '/' + file + ext, {
                     vars: {
                         [name]: silent ? 0 : sname

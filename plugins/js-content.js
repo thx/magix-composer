@@ -456,7 +456,7 @@ let processContent = (from, to, content, inwatch) => {
         }
         return e;
     }).then(e => {
-        e.content = e.content.replace(selfCssRefReg, (_, key) => {
+        e.content = e.content.replace(selfCssRefReg, (_, prefix, key) => {
             if (key.startsWith('--')) {
                 let replacement = e.cssVarsMap[key];
                 let dest = e.declaredFiles.vars[key];
@@ -490,7 +490,7 @@ let processContent = (from, to, content, inwatch) => {
                     return `unfound-selector-[${key}]`;
                 }
             }
-        });
+        }).replace(/\x12/g, '');
         return e;
     }).then(e => {
         let after = Promise.resolve(e);
