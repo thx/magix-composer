@@ -208,8 +208,8 @@ module.exports = (input, htmlFile, walk) => {
                     if (!tmplCommandAnchorReg.test(a.name)) {
                         attrsKV[a.name] = a.value;
                     }
-                    if (a.value.indexOf('>') > -1 ||
-                        a.value.indexOf('<') > -1) {
+                    if (a.value.includes('>') ||
+                        a.value.includes('<')) {
                         token.needEncode = true;
                     }
                 } else if (!tmplCommandAnchorReg.test(a.name)) {

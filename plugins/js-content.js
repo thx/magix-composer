@@ -124,7 +124,8 @@ let processContent = (from, to, content, inwatch) => {
             //console.log(result);
             if (utils.isString(result)) {
                 before = Promise.resolve(result);
-            } else if (result && utils.isFunction(result.then)) {
+            } else if (result &&
+                utils.isFunction(result.then)) {
                 before = result;
             }
         } catch (ex) {

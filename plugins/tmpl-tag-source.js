@@ -10,7 +10,7 @@ let sourceHTMLTagReg = /(?:[\r\n]([ \t\f]*))?<mx-source-origin[^>]*>([\s\S]+?)<\
 let artSourceHTMLReg = /(?:[\r\n]([ \t\f]*))?\{{2}mx-source-origin[^\}]*\}{2}([\s\S]+?)\{{2}\/mx-source-origin\}{2}/g;
 let braceReg = /[{}]/g;
 let escapeAnd = /&/g;
-let escapeHTMLReg = /[<>]/g;
+let escapeHTMLReg = /[<>&]/g;
 let escapeHTMLMap = {
     '<': '&lt;',
     '>': '&gt;',
@@ -145,6 +145,7 @@ module.exports = {
                 content = encodeHTMLAndArt(content);
             } else if (translateHTML) {
                 let info = tmplArt.store(content, e);
+                //console.log(info.content);
                 let tmpl = encodeHTML(info.content);
                 content = tmplArt.recover(tmpl, info.recoverReg, info.store);
             }

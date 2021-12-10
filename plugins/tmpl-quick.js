@@ -190,6 +190,45 @@ let canGenerateHTML = node => {
     return false;
 };
 
+let generateInnerHTML = (node, withOuter = false) => {
+    if (node.type == 3) {
+        if (node.isXHTML) {
+            return tmplUnescape(node.content);
+        }
+        return node.content;
+    }
+    let result = [];
+    if (withOuter) {
+        result.push(`<${node.tag}`);
+        if (node.attrs) {
+            for (let a of node.attrs) {
+                result.push(` ${a.name}`);
+                if (!a.unary) {
+                    result.push(`="${a.value}"`);
+                }
+            }
+        }
+    }
+    if (node.unary) {
+        if (withOuter) {
+            result.push('/>');
+        }
+    } else {
+        if (withOuter) {
+            result.push('>');
+        }
+        if (node.children) {
+            for (let c of node.children) {
+                result.push(generateInnerHTML(c, true));
+            }
+        }
+        if (withOuter) {
+            result.push(`</${node.tag}>`);
+        }
+    }
+    return result.join('');
+};
+
 let isChildOf = (sub, parent) => {
     if (sub.level > parent.level) {
         let pIndex = sub.path[parent.level];
@@ -1962,16 +2001,22 @@ let process = (src, e) => {
             if (node.children.length) {
                 if (node.staticValue &&
                     canGenerateHTML(node)) {
+                    // console.log(node && node.children[0]);
+                    // console.log(generateInnerHTML(node));
                     vnodeInited[level + 1] = 1;
                     //console.log(node, level + 1);
                     vnodeDeclares[`$vnode_${level + 1}`] = 1;
                     //snippets.push(`$vnode_${level + 1}=[$createVNode(0,'${node.innerHTML.replace(escapeSlashRegExp, '\\$&')}',1)];`);
                     let exist = inlineStaticHTML[node.innerHTML];
+                    //console.log(node);
+                    let html = generateInnerHTML(node);
+                    //console.log(html);
+                    html = attrMap.escapeSlashAndBreak(html);
                     if (!exist) {
                         exist = {
                             count: 0,
                             level: [],
-                            html: attrMap.escapeSlashAndBreak(node.innerHTML),
+                            html,
                             key: staticCounter++
                         };
                         inlineStaticHTML[node.innerHTML] = exist;
