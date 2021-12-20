@@ -51,6 +51,11 @@ let actions = {
             return JSON.stringify([styleId(file), css]).slice(1, -1);
         });
     },
+    global(file) {
+        return style(file).then(css => {
+            return JSON.stringify([styleId(file), css]).slice(1, -1);
+        });
+    },
     compiled(file, e) {
         let to = path.resolve(configs.compiledFolder + file.replace(configs.commonFolder, ''));
         return new Promise((resolve, reject) => {

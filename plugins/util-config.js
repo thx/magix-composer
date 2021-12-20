@@ -35,6 +35,7 @@ module.exports = {
     tmplCustomAttrs: [],//自定义属性
     tmplRadioOrCheckboxRename: true,
     tmplAddViewsToDependencies: true,
+    tmplQuickWithTryCatch: false,//是否生成quick模板时带try catch
     tmplSupportSlot: true,
     tmplSupportSlotFn: true,
     selectorSilentErrorCss: true,//css选择器处理失败时，使用原有的选择器还是提示用户出错

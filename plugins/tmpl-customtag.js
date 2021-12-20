@@ -338,6 +338,9 @@ module.exports = {
                     }
                 }
                 return attrStr;
+            },
+            buildInnerHTML(token, except) {
+                return tmplCmd.getInnerHTML(token, except);
             }
         };
         let updateOffset = (node, content) => {
@@ -413,7 +416,7 @@ module.exports = {
                 endAttrs: n.endAttrs || '',
                 attrsKV: n.attrsKV,
                 content,
-                nodesMap: map
+                tokensMap: map
             };
             /*
             shared设计

@@ -244,7 +244,7 @@ let processContent = (from, to, content, inwatch) => {
             node.raw = raw.replace(revisableGReg, m => {
                 add = true;
                 if (configs.debug) {
-                    return m.slice(0, -1) + revisableTail + '}';
+                    return '@:{rs$' + m.slice(3, -1) + revisableTail + '}';
                 }
                 return md5(m, 'revisableString', configs.revisableStringPrefix);
             });

@@ -41,7 +41,7 @@ module.exports = {
     microTmplCommand: /<%[\s\S]*?%>/g,
     revisableReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/,
     revisableGReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/g,
-    revisableTail: '~rs',
+    revisableTail: '$' + Math.random().toString(16).replace(/\./g, '$'),
     selfCssRefReg: /@:(@keyframes|@font-face)?\(\.?([\w\-_:]+)\)/g,
     galleryFileNames: ['_config', 'config', 'cfg', '_cfg'],
     galleryFileSuffixes: ['mjs', 'js'],

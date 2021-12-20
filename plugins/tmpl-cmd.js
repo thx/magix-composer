@@ -21,7 +21,55 @@ let cmdOutReg = /^<%([#=:!~])?([\s\S]*)%>$/;
 let artCtrlsReg = /^(?:<%'\x17?(\d+)\x11([^\x11]+)\x11\x17?'%>)?(<%[\s\S]+?%>)$/;
 let artCtrlsReg1 = /<%'\d+\x11([^\x11]+)\x11'%>(<%[\s\S]+?%>)/g;
 let isLineArtCtrlsReg = /^<%'(\d+)\x11([^\x11]+)\x11'%>$/;
+
+let getInnerHTML = (node, except = null, withOuter = false) => {
+    if (node.type == 3) {
+        if (node.isXHTML) {
+            return tmplUnescape(node.content);
+        }
+        return node.content;
+    } else if (node.type == 8) {
+        return `<!--${node.content}-->`;
+    }
+    let result = [];
+    if (withOuter) {
+        result.push(`<${node.tag}`);
+        if (node.attrs) {
+            for (let a of node.attrs) {
+                if (!except ||
+                    !except('attr', a)) {
+                    result.push(` ${a.name}`);
+                    if (!a.unary) {
+                        result.push(`="${a.value}"`);
+                    }
+                }
+            }
+        }
+    }
+    if (node.unary) {
+        if (withOuter) {
+            result.push('/>');
+        }
+    } else {
+        if (withOuter) {
+            result.push('>');
+        }
+        if (node.children) {
+            for (let c of node.children) {
+                if (!except ||
+                    !except('child', c)) {
+                    result.push(getInnerHTML(c, except, true));
+                }
+            }
+        }
+        if (withOuter) {
+            result.push(`</${node.tag}>`);
+        }
+    }
+    return result.join('');
+};
 module.exports = {
+    getInnerHTML,
     compile(tmpl) {
         //特殊处理绑定事件及参数
         tmpl = tmpl.replace(bindReg2, (m, left, expr, right) => {

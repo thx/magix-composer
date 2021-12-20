@@ -679,7 +679,7 @@ module.exports = {
                 if (revisableReg.test(node.raw)) {
                     node.raw = node.raw.replace(revisableReg, m => {
                         if (configs.debug) {
-                            return m.slice(0, -1) + revisableTail + '}';
+                            return '@:{rs$' + m.slice(3, -1) + revisableTail + '}';
                         }
                         let r = '\x12' + md5(m, 'revisableString', configs.revisableStringPrefix);
                         e.revisableStrings.push(r);

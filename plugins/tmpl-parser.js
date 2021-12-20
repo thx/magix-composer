@@ -210,7 +210,7 @@ module.exports = (input, htmlFile, walk) => {
                     }
                     if (a.value.includes('>') ||
                         a.value.includes('<')) {
-                        token.needEncode = true;
+                        //token.needEncode = true;
                     }
                 } else if (!tmplCommandAnchorReg.test(a.name)) {
                     attrsKV[a.name] = true;
@@ -271,6 +271,7 @@ module.exports = (input, htmlFile, walk) => {
         comment(cmd, start, end) {
             let token = {
                 id: 't' + id++,
+                type: 8,
                 isComment: true,
                 content: cmd,
                 start,
@@ -284,6 +285,7 @@ module.exports = (input, htmlFile, walk) => {
         chars(text, { start, end }) {
             let token = {
                 id: 't' + id++,
+                type: 3,
                 isText: true,
                 content: text,
                 start,

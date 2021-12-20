@@ -136,7 +136,7 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
         let src = tmplCmd.recover(m, refTmplCommands);
         tmplChecker.checkStringRevisable(m, src, e);
         if (configs.debug) {
-            return m.slice(0, -1) + revisableTail + '}';
+            return '@:{rs$' + m.slice(3, -1) + revisableTail + '}';
         }
         let r = '\x12' + md5(m, 'revisableString', configs.revisableStringPrefix);
         e.revisableStrings.push(r);

@@ -35,7 +35,7 @@ let processFile = (from, to, inwatch) => { // d:\a\b.js  d:\c\d.js
                 return jsContent.process(from, to, 0, inwatch);
             }).then(e => {
                 if (inwatch) {
-                    console.log('[MXC Tip(js)] finish:', chalk.green(from));
+                    console.log('[MXC Tip(js)] compiled:', chalk.green(from));
                 }
                 if (!e.isSnippet) {
                     to = to.replace(configs.jsFileExtNamesReg, m => {

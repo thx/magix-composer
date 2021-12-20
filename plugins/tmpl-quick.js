@@ -141,6 +141,8 @@ let quoteReg = new RegExp('(?:' + Object.keys(quoteMap).join('|') + ')', 'g');
 //console.log(quoteReg);
 let quoteReplacer = m => quoteMap[m];
 let encodeSlashRegExp = s => s.replace(escapeSlashRegExp, '\\$&');
+let dquoteReg = /"/g;
+let encodeDQuote = str => str.replace(dquoteReg, '&#34;');
 let storeInnerMatchedTags = (tmpl, store) => {
     let idx = store[tmplStoreIndexKey] || 0;
     return tmpl.replace(matchedTagReg, (m, prefix, tag, content, suffix) => {
@@ -188,45 +190,6 @@ let canGenerateHTML = node => {
         }
     }
     return false;
-};
-
-let generateInnerHTML = (node, withOuter = false) => {
-    if (node.type == 3) {
-        if (node.isXHTML) {
-            return tmplUnescape(node.content);
-        }
-        return node.content;
-    }
-    let result = [];
-    if (withOuter) {
-        result.push(`<${node.tag}`);
-        if (node.attrs) {
-            for (let a of node.attrs) {
-                result.push(` ${a.name}`);
-                if (!a.unary) {
-                    result.push(`="${a.value}"`);
-                }
-            }
-        }
-    }
-    if (node.unary) {
-        if (withOuter) {
-            result.push('/>');
-        }
-    } else {
-        if (withOuter) {
-            result.push('>');
-        }
-        if (node.children) {
-            for (let c of node.children) {
-                result.push(generateInnerHTML(c, true));
-            }
-        }
-        if (withOuter) {
-            result.push(`</${node.tag}>`);
-        }
-    }
-    return result.join('');
 };
 
 let isChildOf = (sub, parent) => {
@@ -876,6 +839,7 @@ let parser = (tmpl, e) => {
                         }
                     }
                     if (!ignoreAttr) {
+                        a.value = encodeDQuote(tmplUnescape(a.value));
                         aList.push(a);
                     }
                 }
@@ -884,7 +848,7 @@ let parser = (tmpl, e) => {
             token.path = [...current.path, index];
             token.index = index;
             if (token.isMxView) {
-                let addFromOrTo = false;
+                //let addFromOrTo = false;
                 if (token.isMxView &&
                     configs.tmplSupportSlot) {
                     let inLooseGroup = isInGroupNode(token, groupDeclared.concat(groupUsed), true);
@@ -1881,9 +1845,13 @@ let process = (src, e) => {
                         params = node.groupContext;
                     }
                     snippets.push(`${newKey}=(${params})=>{\n`);
-                    if (configs.debug &&
-                        node.children.length) {
-                        snippets.push(`\ntry{\r\n`);
+                    if (node.children.length) {
+                        if (configs.debug) {
+                            snippets.push(`\ntry{\r\n`);
+                        } else if (!node.canHoisting &&
+                            configs.tmplQuickWithTryCatch) {
+                            snippets.push(`\ntry{\r\n`);
+                        }
                     }
                 }
             }
@@ -2001,16 +1969,10 @@ let process = (src, e) => {
             if (node.children.length) {
                 if (node.staticValue &&
                     canGenerateHTML(node)) {
-                    // console.log(node && node.children[0]);
-                    // console.log(generateInnerHTML(node));
                     vnodeInited[level + 1] = 1;
-                    //console.log(node, level + 1);
                     vnodeDeclares[`$vnode_${level + 1}`] = 1;
-                    //snippets.push(`$vnode_${level + 1}=[$createVNode(0,'${node.innerHTML.replace(escapeSlashRegExp, '\\$&')}',1)];`);
                     let exist = inlineStaticHTML[node.innerHTML];
-                    //console.log(node);
-                    let html = generateInnerHTML(node);
-                    //console.log(html);
+                    let html = tmplCmd.getInnerHTML(node);
                     html = attrMap.escapeSlashAndBreak(html);
                     if (!exist) {
                         exist = {
@@ -2132,6 +2094,7 @@ let process = (src, e) => {
                     if (node.groupContextNode) {
                         //console.log(node);
                         let exTmpl = `}catch(ex){let msg = 'render view error:' + (ex.message || ex); msg += '\\r\\n\\tsrc art: ' + $__art + '\\r\\n\\tat line: ' + $__line; msg += '\\r\\n\\ttranslate to: ' + $__ctrl + '\\r\\n\\tat file:${encodeSlashRegExp(e.shortHTMLFile)}'; throw msg;} `;
+                        let catchTmpl = `}catch(ex){$logError(ex);return [$createVNode(0,'${encodeSlashRegExp(e.shortHTMLFile)} error:'+ex.message;}`;
                         if (node.canHoisting) {
                             //let src = `\r\n${prefix}=$vnode_${level + 1};`;
                             //snippets.push(src);
@@ -2146,6 +2109,8 @@ let process = (src, e) => {
                             snippets.push(`\nreturn $vnode_${level + 1};`);
                             if (configs.debug) {
                                 snippets.push(exTmpl);
+                            } else if (configs.tmplQuickWithTryCatch) {
+                                snippets.push(catchTmpl);
                             }
                         }
                         snippets.push(`};\n}\n`);
@@ -2310,6 +2275,8 @@ let process = (src, e) => {
     source += `\r\nreturn ${rootCanHoisting ? key : rootNode}`;
     if (configs.debug) {
         source = `let $__art, $__line, $__ctrl; try { ${source} \r\n} catch (ex) { let msg = 'render view error:' + (ex.message || ex); msg += '\\r\\n\\tsrc art: ' + $__art + '\\r\\n\\tat line: ' + $__line; msg += '\\r\\n\\ttranslate to: ' + $__ctrl + '\\r\\n\\tat file:${encodeSlashRegExp(e.shortHTMLFile)}'; throw msg; } `;
+    } else if (configs.tmplQuickWithTryCatch) {
+        source = ` try { ${source} \r\n} catch (ex) {$logError(ex); return $createVNode($viewId, 0,[$createVNode(0,'${encodeSlashRegExp(e.shortHTMLFile)} error:'+ex.message)]) } `;
     }
     let params = '', idx = tmplFnParams.length - 1;
     for (idx; idx >= 0; idx--) {
@@ -2324,7 +2291,12 @@ let process = (src, e) => {
     for (let i = 0; i <= idx; i++) {
         params += ',' + tmplFnParams[i];
     }
-    source = `(${tmplGlobalDataRoot}, $createVNode,$viewId${params})=> { \r\n${source} } `;
+    if (!configs.debug &&
+        configs.tmplQuickWithTryCatch) {
+        source = `($logError,${tmplGlobalDataRoot}, $createVNode,$viewId${params})=> { \r\n${source} } `;
+    } else {
+        source = `(${tmplGlobalDataRoot}, $createVNode,$viewId${params})=> { \r\n${source} } `;
+    }
     for (let i in staticObjects) {
         let v = staticObjects[i];
         if (!v.inStatic || v.used > 1) {

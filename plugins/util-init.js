@@ -18,6 +18,7 @@ let reservedReplacer = {
     html: 1,
     style: 1,
     as: 1,
+    global: 1,
     compiled: 1
 };
 module.exports = () => {
@@ -106,7 +107,9 @@ module.exports = () => {
                 throw new Error('MXC-Error(util-init) reserved:' + r);
             }
         }
-        replacer.push('str', 'base64', 'style', 'html', 'uId', 'as', 'src', 'compiled');
+        for (let k in reservedReplacer) {
+            replacer.push(k);
+        }
         configs.fileReplacerPrefixesReg = new RegExp(`(?:${replacer.join('|')})@:[\\w\\.\\-\\/\\\\]+`);
         configs.fileReplacerPrefixesHolderReg = new RegExp(`([\`"'])(${replacer.join('|')})\\x12@:([\\w\\.\\-\\/\\\\]+)\\1`, 'g');
     }
