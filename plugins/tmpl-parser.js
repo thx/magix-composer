@@ -119,6 +119,7 @@ module.exports = (input, htmlFile, walk) => {
             }
             let parent = ctrls[ctrls.length - 1];
             let attrsKV = Object.create(null);
+            let aList = [];
             let token = {
                 id: 't' + id++,
                 pId: parent && parent.id,
@@ -127,6 +128,7 @@ module.exports = (input, htmlFile, walk) => {
                 unary,
                 group: i != -1 && i == ip,
                 attrsKV,
+                attrs: aList,
                 customTag: !nativeTags[lowerTag] && !svgTags[lowerTag] && !mathTags[lowerTag],
                 hasContent: true,
                 start,
@@ -174,15 +176,15 @@ module.exports = (input, htmlFile, walk) => {
                 } else if (temp == tmplGroupUseAttr) {
                     token.groupUseNode = tag == tmplGroupTag;
                     token.groupUse = a.value;
-                    if (safeVarReg.test(token.groupUse)) {
-                        throw new Error(`[MXC-Error(tmpl-parser)] unsupport mx-slot name "${token.groupUse}" at ${htmlFile}`);
-                    }
+                    // if (safeVarReg.test(token.groupUse)) {
+                    //     throw new Error(`[MXC-Error(tmpl-parser)] unsupport mx-slot name "${token.groupUse}" at ${htmlFile}`);
+                    // }
                 } else if (temp == tmplGroupKeyAttr) {
                     token.groupKeyNode = tag == tmplGroupTag;
                     token.groupKey = a.value;
-                    if (safeVarReg.test(token.groupKey)) {
-                        throw new Error(`[MXC-Error(tmpl-parser)] unsupport mx-slot name "${token.groupKey}" at ${htmlFile}`);
-                    }
+                    // if (safeVarReg.test(token.groupKey)) {
+                    //     throw new Error(`[MXC-Error(tmpl-parser)] unsupport mx-slot name "${token.groupKey}" at ${htmlFile}`);
+                    // }
                 } else if (temp == tmplGroupId) {
                     token.groupId = a.value
                 } else if (temp == tmplGroupParentId) {
@@ -206,6 +208,7 @@ module.exports = (input, htmlFile, walk) => {
                     }
                     temp += '="' + a.value + '"';
                     if (!tmplCommandAnchorReg.test(a.name)) {
+                        aList.push(a);
                         attrsKV[a.name] = a.value;
                     }
                     if (a.value.includes('>') ||
@@ -213,6 +216,7 @@ module.exports = (input, htmlFile, walk) => {
                         //token.needEncode = true;
                     }
                 } else if (!tmplCommandAnchorReg.test(a.name)) {
+                    aList.push(a);
                     attrsKV[a.name] = true;
                 }
             }

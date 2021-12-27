@@ -1386,6 +1386,7 @@ module.exports = {
                 }
                 //console.log(ref,m);
                 if (ref.canUse) {
+                    //console.log(ref);
                     return `<%#${ref.cmd},\x00xl\x00${ref.key}%>`;
                 }
                 // }

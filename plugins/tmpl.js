@@ -95,11 +95,12 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
             shortOwnerHTMLFile: e.shortHTMLFile
         }, e);
     } catch (ex) {
-        console.log(chalk.red('MXC-Error(tmpl) ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
+        console.log(chalk.red('MXC-Error(tmpl) process custom tag error:' + ex.message), 'at', chalk.magenta(e.shortHTMLFile));
         ex.message += ' at ' + e.shortHTMLFile;
         reject(ex);
         return;
     }
+    //console.log(fileContent);
     if (srcContent != fileContent) {
         tmplArt.check(fileContent, e);
         fileContent = tmplQuick.preProcess(fileContent, e);

@@ -5,6 +5,7 @@ let chalk = require('chalk');
 let configs = require('./util-config');
 let htmlminifier = require('html-minifier');
 let jsGeneric = require('./js-generic');
+let tmplUnescape = require('html-entities-decoder');
 let { htmlminifier: cHTMLMinifier,
     tmplStoreIndexKey,
     microTmplCommand } = require('./util-const');
@@ -161,7 +162,7 @@ module.exports = {
         return tmpl;
     },
     recover(tmpl, refTmplCommands, processor) { //恢复替换的命令
-        return tmpl.replace(tmplCommandAnchorReg, match => {
+        return (tmpl + '').replace(tmplCommandAnchorReg, match => {
             let value = refTmplCommands[match];
             if (processor) {
                 value = processor(value);
@@ -179,7 +180,12 @@ module.exports = {
         });
     },
     buildCmd(line, operate, art, content) {
-        return `<%'${line}\x11${art}\x11'%><%${operate}${content}%>`;
+        let result = '';
+        if (line) {
+            result = `<%'${line}\x11${art}\x11'%>`;
+        }
+        result += `<%${operate}${content}%>`;
+        return result;
     },
     toArtCmd(cmd, refTmplCommands) {
         return this.recover(cmd, refTmplCommands).replace(artCtrlsReg1, '{{$1}}');
@@ -230,9 +236,6 @@ module.exports = {
                 vars: cmd,
                 key: ''
             };
-        }
-        return {
-            succeed: false
         }
     }
 };

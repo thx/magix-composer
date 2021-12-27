@@ -1,12 +1,6 @@
 /*
     增加mx-tag自定义标签的处理，方便开发者提取公用的html片断
  */
-/*
-    <mx-vframe src="app/views/default" pa="{{@a}}" pb="{{@b}}" />
-    <mx-vframe src="app/views/default" pa="{{@a}}" pb="{{@b}}">
-        loading...
-    </mx-vframe>
- */
 let fs = require('fs');
 let path = require('path');
 let url = require('url');
@@ -20,7 +14,8 @@ let customConfig = require('./tmpl-customtag-cfg');
 let atpath = require('./util-atpath');
 let qblance = require('./tmpl-qblance');
 let regexp = require('./util-rcache');
-let generic = require('./js-generic');
+// let generic = require('./js-generic');
+// let jsFileCache = require('./js-fcache');
 let {
     quickDirectTagName,
     quickCommandTagName,
@@ -59,20 +54,22 @@ let skipTags = {
     [tmplGroupTag]: 1,
     [quickPlaceholderTagName]: 1
 };
-let tagReg = /\btag\s*=\s*"([^"]+)"/;
+let tagReg = /\s+\btag\s*=\s*"([^"]+)"/;
 let attrNameValueReg = /(^|\s|\x07)([^=\/\s\x07]+)(?:\s*=\s*(["'])([\s\S]*?)\3)?/g;
-let inputTypeReg = /\btype\s*=\s*(['"])([\s\S]+?)\1/;
+let inputTypeReg = /\s+\btype\s*=\s*(['"])([\s\S]+?)\1/;
 let attrAtStartContentHolderReg = /\x03/g;
 let mxViewAttrHolderReg = /\x02/g;
 let atReg = /@/g;
-let mxViewAttrReg = /\bmx-view\s*=\s*(['"])([^'"]*?)\1/;
+let mxViewAttrReg = /\s+\bmx-view\s*=\s*(['"])([^'"]*?)\1/;
 let valuableAttrReg = /\x07\d+\x07\s*\?\?\s*/;
 let booleanAttrReg = /\x07\d+\x07\s*\?\s*/;
-let wholeCmdReg = /^(?:\x07\d+\x07)+$/;
+//let wholeCmdReg = /^\s*\x07\d+\x07\s*$/;
 let hasCmdReg = /\x07\d+\x07/;
 let httpProtocolReg = /^(?:https?:)?\/\//i;
 let httpProtocolReg1 = /^https?:(?:[\/\\]{2})?/i;
-let classReg = /\bclass\s*=\s*"([^"]+)"/g;
+let classReg = /\s+\bclass\s*=\s*"([^"]+)"/g;
+let safeVarReg = /[^a-zA-Z0-9_$]/g;
+let safeVar = s => s.replace(safeVarReg, '_');
 let entities = {
     '>': '&gt;',
     '<': '&lt;'
@@ -301,44 +298,44 @@ module.exports = {
         e.tmplConditionAttrs = tmplConditionAttrs;
         e.tmplComponents = [];
         let actions = {
-            getTokens(content) {
-                return tmplParser(content, e.shortHTMLFile);
-            },
-            isWholeCmd(cmd) {
-                return wholeCmdReg.test(cmd);
-            },
+            // getTokens(content) {
+            //     return tmplParser(content, e.shortHTMLFile);
+            // },
+            // isWholeCmd(cmd) {
+            //     return wholeCmdReg.test(cmd);
+            // }, 
             hasCmd(cmd) {
                 return hasCmdReg.test(cmd);
             },
-            recoverCmd(cmd) {
-                return tmplCmd.toArtCmd(cmd, cmdCache);
-            },
+            // recoverCmd(cmd) {
+            //     return tmplCmd.toArtCmd(cmd, cmdCache);
+            // },
             readCmd(cmd) {
                 return tmplCmd.extractCmdContent(cmd, cmdCache);
             },
-            recoverHTML(cmd) {
-                return cmd.replace(decodeRegexp, _ => decodeEntities[_]);
-            },
+            // recoverHTML(cmd) {
+            //     return cmd.replace(decodeRegexp, _ => decodeEntities[_]);
+            // },
             buildCmd(line, operate, art, content) {
                 return tmplCmd.buildCmd(line, operate, art, content);
             },
-            buildAttrs(attrs, cond) {
-                let attrStr = '';
-                for (let p in attrs) {
-                    let v = attrs[p];
-                    let resolve = cond ? cond(p, v) : v;
-                    if (resolve != null &&
-                        resolve !== false) {
-                        if (resolve === true) {
-                            resolve = '';
-                        } else {
-                            resolve = '="' + resolve + '"';
-                        }
-                        attrStr += ' ' + p + resolve;
-                    }
-                }
-                return attrStr;
-            },
+            // buildAttrs(attrs, cond) {
+            //     let attrStr = '';
+            //     for (let p in attrs) {
+            //         let v = attrs[p];
+            //         let resolve = cond ? cond(p, v) : v;
+            //         if (resolve != null &&
+            //             resolve !== false) {
+            //             if (resolve === true) {
+            //                 resolve = '';
+            //             } else {
+            //                 resolve = '="' + resolve + '"';
+            //             }
+            //             attrStr += ' ' + p + resolve;
+            //         }
+            //     }
+            //     return attrStr;
+            // },
             buildInnerHTML(token, except) {
                 return tmplCmd.getInnerHTML(token, except);
             }
@@ -500,7 +497,13 @@ module.exports = {
                                     };
                                 }
                                 ci[galleryDynamic] = configFile;
-                                configs.galleriesDynamicRequires[configFile] = ci;
+                                let dest =
+                                    configs.galleriesDynamicRequires[configFile];
+                                if (!dest) {
+                                    dest = [];
+                                    configs.galleriesDynamicRequires[configFile] = dest;
+                                }
+                                dest.push(ci);
                                 gMap[result.tag] = ci;
                             } else if (!i) {
                                 gMap[result.tag] = {
@@ -736,7 +739,7 @@ module.exports = {
                     view += `?${params.join('&')}`;
                 }
                 //console.log(view);
-                return `\x02="${view}"`;
+                return ` \x02="${view}"`;
             });
             let html = `<${tag} ${attrs}`;
             //result.content=qblance.setNestLinkId(result.content);
@@ -750,7 +753,7 @@ module.exports = {
                         rewriteName;
                     attrs = attrs.replace(groupKeyReg, (m, k) => {
                         attrName = k;
-                        rewriteName = k + '_$' + (groupIndex++);
+                        rewriteName = safeVar(k) + '_$' + (groupIndex++);
                         return ` ${tmplGroupKeyAttr}="${rewriteName}"`;
                     });
                     if (attrName) {

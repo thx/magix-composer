@@ -91,6 +91,7 @@ let md5 = require('./util-md5');
 //let isMethodReg = /^\s*[a-zA-Z0-9$_]+\([\s\S]+?\)\s*$/;
 let numString = /^'(-?[0-9_](?:[0-9_]*|\.[0-9_]+))'$/;
 let chalk = require('chalk');
+let jsGeneric = require('./js-generic');
 let viewIdReg = /\x1f/g;
 let artCtrlReg = /(?:<%'(\d+)\x11([^\x11]+)\x11'%>)?<%([#=:&])?([\s\S]+?)%>/g;
 let inReg = /\(([\s\S]+?)\s*,\s*([^),]+),\s*([^),]+),\s*([^),]+),\s*(1|-1),\s*([a-zA-Z0-9\.\$\_]+)\)\s*in\s+([\S\s]+)/;
@@ -225,6 +226,19 @@ let findInnerUsedGroups = (start, groupsOfUsed, groupsOfDeclaredMap) => {
     return groups;
 };
 
+let isVarName = str => {
+    if (str.trim() !== str) {
+        return false;
+    }
+
+    try {
+        new Function(str, 'var ' + str);
+    } catch (_) {
+        return false;
+    }
+
+    return true;
+}
 let toNumberString = s => {
     if (numString.test(s)) {
         let r = s.replace(numString, '$1');
@@ -382,6 +396,7 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
             //let a = tmplCmd.extractRefContent(content);
             //console.log(a);
             //let out = `($refData[${a.key}]=${a.vars},${a.key})`;
+            //console.log(content);
             let out = `$keyOf($refData,${content})`;
             if (configs.debug) {
                 if (preArt == offset) {
@@ -1644,6 +1659,11 @@ let process = (src, e) => {
                             }
                             if (!hasExt) {
                                 attr.returned = tmplVarTempKey;
+                                //值判断
+                                // if (valuable) {
+                                //     attr.returned = '';
+                                //     cond = cond.slice(0, -2);
+                                // }
                             }
                         }
                     }
@@ -1657,10 +1677,10 @@ let process = (src, e) => {
                                 outputBoolean ||
                                 a.cond)) {
                             if (a.value === true || outputBoolean) {
-                                cond = `(${tmplVarTempKey}=${cond},${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&${tmplVarTempKey}!==null&&console.error('make sure attr:"${a.name}" returned only true , false or null value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
+                                cond = `(${tmplVarTempKey}=${cond},${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&console.error('make sure attr:"${a.name}" returned only true , false or null value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
                             } else if (attr.direct) {
                                 let assign = attr.returned == tmplVarTempKey ? '' : `${tmplVarTempKey}=${attr.returned},`;
-                                attr.returned = `(${assign}${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==null&&console.error('make sure attr:"${a.name}" returned only null or false falsy value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
+                                attr.returned = `(${assign}${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&console.error('make sure attr:"${a.name}" returned only null or false value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
                             }
                         } else if (a.name.startsWith(mxPrefix) &&
                             a.cond &&
@@ -1668,7 +1688,7 @@ let process = (src, e) => {
                             !a.cond.valuable &&
                             cond.endsWith(')&&')) {
                             cond = cond.slice(1, -3);
-                            cond = `((${tmplVarTempKey}=${cond},(${tmplVarTempKey}||${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&console.error('make sure attr:"${a.name}" returned only null or false falsy value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})))&&`;
+                            cond = `((${tmplVarTempKey}=${cond},(${tmplVarTempKey}||${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&console.error('make sure attr:"${a.name}" returned only null or false value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})))&&`;
                         }
                     }
                     if (attr.direct) {
@@ -1836,7 +1856,7 @@ let process = (src, e) => {
                         console.log(chalk.red('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute'), 'at file:', chalk.grey(e.shortHTMLFile));
                         throw new Error('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute at file:' + e.shortHTMLFile);
                     }
-                    let newKey = quickGroupFnPrefix + node.groupKey;// //`${quickGroupFnPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
+                    let newKey = quickGroupFnPrefix + safeVar(node.groupKey);// //`${quickGroupFnPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
                     snippets.push(`\nif(!${newKey}){`);
 
                     let params = '';// = `$id = $viewId`;
@@ -1934,6 +1954,13 @@ let process = (src, e) => {
                     //     }
                     // }
                     if (node.groupContext) {
+                        let splitContents = jsGeneric.splitParams(node.groupContext);
+                        for (let sc of splitContents) {
+                            if (isVarName(sc) &&
+                                !e.globalVars.includes(sc)) {
+                                e.globalVars.push(sc);
+                            }
+                        }
                         //key += ',' + node.groupContext;
                         key += node.groupContext;
                     }
@@ -2116,11 +2143,11 @@ let process = (src, e) => {
                         snippets.push(`};\n}\n`);
                     } else if (node.canHoisting) {
                         if (node.children.length) {
-                            snippets.push(`$slots.${node.groupKey}=$vnode_${level + 1};\n`);
+                            snippets.push(`$slots.${safeVar(node.groupKey)}=$vnode_${level + 1};\n`);
                             snippets.push('}\n');
                         }
                     } else {
-                        snippets.push(`$slots.${node.groupKey}=$vnode_${level + 1};\n`);
+                        snippets.push(`$slots.${safeVar(node.groupKey)}=$vnode_${level + 1};\n`);
                     }
                 } else {
                     let prefix = (node.canHoisting || node.inlineStaticValue) ? `${key}=` : '', src = '';
@@ -2241,14 +2268,19 @@ let process = (src, e) => {
     //let hasGroupFunction = e.globalGroupKeys.length > 0;
     //let hasGroupFunction = passedGroupRootRefs.length > 0;
     if (e.globalVars.length) {
-        let vars = ',\r\n{';
+        let vars = ',\r\n{',
+            out;
         for (let key of e.globalVars) {
             if (key != '$viewId' &&
                 key != '$slots') {
                 vars += `\r\n\t${key},`;
+                out = 1;
             }
         }
-        source += vars + '}=' + tmplGlobalDataRoot;
+        vars += '}=' + tmplGlobalDataRoot;
+        if (out) {
+            source += vars;
+        }
     }
     //console.log(vnodeDeclares);
     for (let vd in vnodeDeclares) {

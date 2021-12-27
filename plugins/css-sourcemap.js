@@ -10,7 +10,7 @@ module.exports = (map, file, opts = {}) => {
         }
         map.file = file;
         map = JSON.stringify(map);
-        map = '\n/*# sourceMappingURL=data:application/json;charset=utf-8;base64,' + new Buffer(map).toString('base64') + ' */';
+        map = '\n/*# sourceMappingURL=data:application/json;charset=utf-8;base64,' + Buffer.from(map).toString('base64') + ' */';
         return map;
     }
     return '';

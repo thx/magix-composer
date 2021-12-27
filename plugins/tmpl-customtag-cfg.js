@@ -5,7 +5,7 @@ let { galleryFileNames,
 module.exports = async (root, prefix) => {
     let cfg = {},
         configFile = '';
-    for (let fn of galleryFileNames) {
+    outer: for (let fn of galleryFileNames) {
         for (let s of galleryFileSuffixes) {
             configFile = path.join(root, fn + '.' + s);
             if (fs.existsSync(configFile)) {
@@ -14,7 +14,7 @@ module.exports = async (root, prefix) => {
                 } else {
                     cfg = require(configFile);
                 }
-                break;
+                break outer;
             }
         }
     }

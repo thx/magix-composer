@@ -89,6 +89,9 @@ module.exports = {
     cssContentProcessor(css) { //处理内容
         return css;
     },
+    cssJITGenerator(selector) {
+        return false;
+    },
     fileReplacerProcessor(ctrl, file) {
 
     },

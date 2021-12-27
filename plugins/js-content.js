@@ -14,13 +14,13 @@ let jsWrapper = require('./js-wrapper');
 let configs = require('./util-config');
 let md5 = require('./util-md5');
 let utils = require('./util');
+let cssClean = require('./css-clean');
 
 let fileCache = require('./js-fcache');
-let jsSnippet = require('./js-snippet');
 let jsReplacer = require('./js-replacer');
 let jsHeader = require('./js-header');
 let acorn = require('./js-acorn');
-let { galleryProcessed,
+let {
     revisableGReg,
     atViewPrefix,
     revisableTail,
@@ -40,11 +40,6 @@ let fileReg = /([a-z,&A-Z0-9_\-]+)?@:([\w\.\-\/\\]+\.[a-z0-9A-Z\-_]+)/;
 let isGalleryConfig = file => {
     let cfg = configs.galleriesDynamicRequires[file];
     if (cfg) {
-        delete cfg[galleryProcessed];
-        let files = deps.getConfigDependents(file);
-        for (let p in files) {
-            fileCache.clear(p);
-        }
         return true;
     }
     return false;
@@ -100,15 +95,15 @@ let processContent = (from, to, content, inwatch) => {
         isSnippet: headers.isSnippet,
         exRequires: headers.exRequires,
         noRequires: headers.noRequires,
+        styleJITList: [],
+        styleJITLocker: {},
         processContent
     };
     if (isGalleryConfig(from)) {
         if (inwatch) {
             console.log('[MXC Tip(js-content)] reload:', chalk.blue(from));
         }
-        delete require.cache[from];
         psychic.galleryConfigFile = true;
-        psychic.isSnippet = true;
         return Promise.resolve(psychic);
     }
     if (psychic.exclude) {
@@ -142,7 +137,6 @@ let processContent = (from, to, content, inwatch) => {
         }
         return jsDeps.process(psychic);
     }).then(e => {
-        //console.log(e.content);
         let newRequires = [];
         if (!e.noRequires) {
             for (let req of e.requires) {
@@ -393,7 +387,6 @@ let processContent = (from, to, content, inwatch) => {
             let addDeps = configs.tmplAddViewsToDependencies;
             if (e.noRequires || !addDeps) mxViews = [];
             mxViews = mxViews.concat(e.tmplComponents || []);
-            //console.log(e.tmplMxViewsArray);
             let reqs = [],
                 vars = [];
             for (let v of mxViews) {
@@ -442,6 +435,23 @@ let processContent = (from, to, content, inwatch) => {
             if (e.requires.length && reqs) {
                 reqs = ',' + reqs;
             }
+            if (!e.findMagixModule &&
+                e.styleJITList.length) {
+                if (reqs || e.requires.length) {
+                    reqs += ','
+                }
+                reqs += `"${e.magixModuleName}"`;
+                vars.push(e.magixExpression);
+            }
+            if (e.styleJITList.length) {
+                let cssContent = e.styleJITList.join('');
+                if (!configs.debug) {
+                    cssContent = cssClean.minify(cssContent);
+                }
+                e.content = e.content.replace(e.lastImportAnchorKey, `${e.magixVarName}.applyStyle(${JSON.stringify(e.styleJITNamesKey)},${JSON.stringify(cssContent)})`);
+            } else {
+                e.content = e.content.replace(e.lastImportAnchorKey, '');
+            }
             if (e.quickStaticVars) {
                 for (let v of e.quickStaticVars) {
                     let c = `let ${v.key}`;
@@ -454,6 +464,8 @@ let processContent = (from, to, content, inwatch) => {
             }
             e.content = e.content.replace(e.requiresAnchorKey, reqs);
             e.content = e.content.replace(e.varsAnchorKey, vars.join('\r\n'));
+        } else {
+            e.content = e.content.replace(e.lastImportAnchorKey, '');
         }
         return e;
     }).then(e => {

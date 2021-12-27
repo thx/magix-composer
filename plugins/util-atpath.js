@@ -27,13 +27,13 @@ let resolveAtPath = (content, from) => {
             if (tp.startsWith('.' + sep)) {
                 tp = tp.substring(2);
             }
-            tp = q + tp;
+            tp = (q || '') + tp;
         } else {
             let t = path.relative(folder, c);
             if (t.charAt(0) != '.' && t.charAt(0) != sep) {
                 t = './' + t;
             }
-            tp = q + t;
+            tp = (q || '') + t;
         }
         tp = tp.replace(sepReg, '/');
         return tp;

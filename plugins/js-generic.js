@@ -132,10 +132,12 @@ module.exports = {
                 } else {
                     temp += c;
                 }
-            } else if (c == '[') {
+            } else if (c == '[' ||
+                c == '{') {
                 opened++;
                 temp += c;
-            } else if (c == ']') {
+            } else if (c == ']' ||
+                c == '}') {
                 opened--;
                 temp += c;
             } else {

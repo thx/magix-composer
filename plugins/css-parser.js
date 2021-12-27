@@ -20,7 +20,8 @@ let atRuleSearchContent = {
     media: 1,
     container: 1,
     when: 1,
-    else: 1
+    else: 1,
+    layer: 1
 };
 let atRuleIgnoreContent = {
     page: 1,

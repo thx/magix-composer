@@ -7,12 +7,8 @@ let globReg = require('./util-globreg');
 let utils = require('./util');
 let md5 = require('./util-md5');
 //let crypto = require('crypto');
-let reservedReplacer = {
-    top: 1,
-    bottom: 1,
+let jsReplacer = {
     src: 1,
-    ref: 1,
-    names: 1,
     str: 1,
     base64: 1,
     html: 1,
@@ -20,6 +16,13 @@ let reservedReplacer = {
     as: 1,
     global: 1,
     compiled: 1
+};
+let reservedReplacer = {
+    names: 1,
+    top: 1,
+    bottom: 1,
+    ref: 1,
+    ...jsReplacer
 };
 module.exports = () => {
     if (!configs.$inited) {
@@ -34,9 +37,8 @@ module.exports = () => {
         if (srcName) {
             let hashName = md5.byNum(utils.hash(srcName));
             if (hashName.length < srcName.length) {
-                srcName = hashName;
+                configs.hashedProjectName = hashName;
             }
-            configs.hashedProjectName = srcName;
         }
         // if (configs.projectName === null) {
         //     let str = crypto.createHash('sha512')
@@ -65,7 +67,12 @@ module.exports = () => {
         } else if (rsPrefix.startsWith('$')) {
             rsPrefix += '_';
         }
-        configs.revisableStringPrefix = rsPrefix;
+        let hashedName = md5.byNum(utils.hash(rsPrefix));
+        if (hashedName.length < rsPrefix.length) {
+            configs.revisableStringPrefix = hashedName;
+        } else {
+            configs.revisableStringPrefix = rsPrefix;
+        }
 
         let revisableStringMapReserved = {},
             revisableStringMap = configs.revisableStringMap;
@@ -107,7 +114,7 @@ module.exports = () => {
                 throw new Error('MXC-Error(util-init) reserved:' + r);
             }
         }
-        for (let k in reservedReplacer) {
+        for (let k in jsReplacer) {
             replacer.push(k);
         }
         configs.fileReplacerPrefixesReg = new RegExp(`(?:${replacer.join('|')})@:[\\w\\.\\-\\/\\\\]+`);

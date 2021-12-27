@@ -10,6 +10,7 @@ let jsModuleParser = require('./js-module-parser');
 let configs = require('./util-config');
 //let atpath = require('./util-atpath');
 let { styleImportReg } = require('./util-const');
+let utils = require('./util');
 let { magixModuleIds } = configs;
 let lastMagixMouleId = magixModuleIds[magixModuleIds.length - 1];
 let depsReg = /(?:(?:(?:(?:var|let|const)\s+|,|\s)\s*[^=\s]+\s*=\s*)?\brequire\s*\([^\(\)]+\)|\bimport\s+[^;\r\n]+)[\r\n;,]?|\bimport\s*\([^\(\);\r\n]+\)/g;
@@ -27,6 +28,8 @@ module.exports = {
         let findMagixModule = false;
         let hasImportCss = false;
         let prepend = '';
+        let count = 0;
+        let ak = '/*' + utils.uId('\x1e', e.content) + '_liak_';
         if (e.addWrapper) {
             let depsInfo = jsModuleParser.process(e.content, e.from);
             depsInfo = depsInfo.reverse();
@@ -37,6 +40,7 @@ module.exports = {
                     // depsInfo[0] in range [0,26] ?
                     //console.log(depsInfo);
                     if (offset < last && last < (offset + match.length)) {
+                        lastOffset = offset + match.length;
                         let info = depsInfo.pop();
                         let m;
                         let vId, mId, prefix, tail, dynamicVId = 0;
@@ -106,7 +110,7 @@ module.exports = {
                         if (reqInfo.isCss) {
                             hasImportCss = true;
                         }
-                        return replacement;
+                        return replacement + ak + (++count) + '*/';
                     }
                 }
                 return match;
@@ -114,16 +118,36 @@ module.exports = {
             deps = deps.concat(noKeyDeps);
         }
         if (hasImportCss && !findMagixModule) {
-            deps.unshift(JSON.stringify(lastMagixMouleId));
+            deps.unshift(JSON.stringify(nearestMagixVarName));
             //vars.unshift(nearestMagixVarName);
             prepend += this.getImport({
                 prefix: e.loader == 'module' ? 'import ' : 'let ',
                 tail: ';\n',
                 vId: nearestMagixVarName,
-                mId: lastMagixMouleId,
+                mId: nearestMagixVarName,
                 type: e.loader == 'module' ? 'import' : 'require'
             }, e);
+            findMagixModule = true;
         }
+        e.magixModuleName = lastMagixMouleId;
+        e.magixVarName = nearestMagixVarName;
+        e.findMagixModule = findMagixModule;
+        e.magixExpression = this.getImport({
+            prefix: e.loader == 'module' ? 'import ' : 'let ',
+            tail: ';\n',
+            vId: nearestMagixVarName,
+            mId: lastMagixMouleId,
+            type: e.loader == 'module' ? 'import' : 'require'
+        }, e);
+        if (count) {
+            for (let i = count; i--;) {
+                e.content = e.content.replace(ak + i + '*/', '');
+            }
+        }
+        if (count == 0) {
+            prepend += ak + '0*/';
+        }
+        e.lastImportAnchorKey = ak + count + '*/';
         e.content = prepend + e.content;
         e.deps = deps;
         //e.vars = vars;
@@ -221,7 +245,7 @@ module.exports = {
                 if (prefix) {
                     dId = JSON.stringify(dId);
                 } else {
-                    dId = `${reqInfo.magix}.applyStyle(${JSON.stringify('@' + name)})`;
+                    dId = `${reqInfo.magix}.applyStyle(${JSON.stringify('@:' + name)})`;
                 }
                 if (reqInfo.vId) {
                     replacement += reqInfo.vId + ' = ';

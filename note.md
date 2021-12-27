@@ -86,9 +86,15 @@
 <mx-link *user-id="{{=a}}"></mx-link>
 ```
 
-条件判断
+布尔条件判断输出属性
 ```html
-<mx-link *user-id="{{=a}}??"></mx-link>
+<mx-link *user-id="{{=a}}?"></mx-link><!--a为trusy时输出user-id-->
+<mx-link *user-id="{{=a}}?{{=b}}"></mx-link><!--a为trusy时输出b的值-->
+```
+有值条件判断输出属性
+```html
+<div data-test="{{=a}}??"></div><!--当a不为null或undefined时，输出data-test="a value"，当a计算为false或null时，删除data-tst-->
+<div data-test="{{=a}}??bbb"></div><!--当a不为null或undefined时,输出data-test="bbb"-->
 ```
 保留??或?
 
@@ -103,20 +109,20 @@
 <div>
     top div
 </div>
-<mx-group name="content">
+<mx-slot name="content">
     content {{=name}} here
     <div>
         <span>inner</span>
     </div>
-</mx-group>
+</mx-slot>
 
 {{if from=='a'}}
     <div>
-        <mx-group use="content"/>
+        <mx-slot use="content"/>
     <div>
 {{else}}
     <span>
-        <mx-group use="content"/>
+        <mx-slot use="content"/>
     </span>
 {{/if}}
 ```
@@ -125,17 +131,13 @@
 
 ## 试验中的片断传递
 ```html
-<mx-group name="list" fn="$list">
-    list fn:
-    {{if list}}
-        {{each $list as item index}}
-        {{=index+1}}:{{=item.title}}
-        {{/each}}
-    {{/if}}
-    {{=outerVariable}}
-</mx-group>
-
-<mx-vframe src="./x" *ref="{{# $groups.list }}"/>
+<mx-vframe src="./a">
+    <mx-slot name="a-b-c" fn="src">
+        {{=src.name}}
+    </mx-slot>
+</mx-vframe>
+<!--a.html-->
+<mx-slot use="aBC" fn="{name:'123'}">
 or 
 {{& groups.list([{title:'good'}])}}
 ```

@@ -37,9 +37,38 @@ module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
         if (numReg.test(key)) return m; //纯数字的是模板命令，选择器不可能是纯数字
         //console.log(key,JSON.stringify(key),cssNamesMap[key]);
         let r = cssNamesMap[key];
+        let byJIT = false;
+        if (!r) {
+            let t = configs.cssJITGenerator(key);
+            if (t === true) {//true表示已处理，且不生成相应的JIT样式
+                byJIT = true;
+            } else if (t === false ||
+                t === '' ||
+                t == null) {
+                byJIT = false;
+            } else if (t) {
+                if (!e.styleJITLocker[key]) {
+                    e.styleJITLocker[key] = 1;
+                    let namesMap = Object.create(null),
+                        varsMap = Object.create(null),
+                        atRules = Object.create(null);
+                    let z = cssTransform.cssContentProcessor(t, {
+                        shortFile: `${e.from}.jit.style`,
+                        file: `${e.from}.jit.style`,
+                        namesKey: e.styleJITNamesKey,
+                        namesMap,
+                        varsMap, atRules
+                    });
+                    e.styleJITList.push(z.content);
+                    Object.assign(cssNamesMap, namesMap);
+                    r = cssNamesMap[key];
+                }
+                byJIT = true;
+            }
+        }
         if (!fromCmd) {
-            if (configs.checker.tmplClassCheck &&
-                configs.checker.tmplClassCheck(key)) {
+            if (!byJIT && (!configs.checker.tmplClassCheck ||
+                configs.checker.tmplClassCheck(key))) {
                 selectors[key] = 1;
             }
             checkDuplicate(key);

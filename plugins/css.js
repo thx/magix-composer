@@ -32,6 +32,7 @@ let cssCommonRefReg = /(['"])\s*ref@:([^:]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.s
 let sep = path.sep;
 
 module.exports = e => {
+    e.styleJITNamesKey = cssTransform.genCssNamesKey(e.from + '.jit');
     let globalNamesMap = Object.create(null);
     let globalVarsMap = Object.create(null);
     let globalDeclaredFiles = Object.create(null);

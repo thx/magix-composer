@@ -15,9 +15,26 @@ let jsString = require('./plugins/js-string');
 let jsHeader = require('./plugins/js-header');
 let utils = require('./plugins/util');
 let cssTransform = require('./plugins/css-transform');
+let { galleryProcessed, } = require('./plugins/util-const');
 let processFileCount = 0;
 let combineCount = 0;
 let concurrentTask = 1;
+
+let isGalleryConfig = file => {
+    let cfgs = configs.galleriesDynamicRequires[file];
+    if (cfgs) {
+        for (let c of cfgs) {
+            delete c[galleryProcessed];
+        }
+        delete configs.galleriesDynamicRequires[file];
+        let files = deps.getConfigDependents(file);
+        for (let p in files) {
+            jsFileCache.clear(p);
+        }
+        return true;
+    }
+    return false;
+};
 // let loading='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 // let genMsg = (completed, total) => {
 //     let len = 40;
@@ -58,6 +75,9 @@ module.exports = {
     },
     removeCache(from) {
         from = path.resolve(from);
+        if (isGalleryConfig(from)) {
+            delete require.cache[from];
+        }
         jsFileCache.clear(from);
         cssGlobal.reset(from);
         cssChecker.resetByHost(from);
