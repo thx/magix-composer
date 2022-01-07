@@ -1,3 +1,4 @@
+let crypto = require('crypto');
 let trimSemicolons = /;+/g;
 let trimEndSemicolon = /;$/;
 let trimSpaceAroundColon = /\s*:\s*/g;
@@ -27,9 +28,11 @@ let reserveKeys = {
     'bindto': 1,//mx-bindto 从界面同步数据到js时，指示同步到哪个view上
     'bindexpr': 1,//mx-bindexpr 同步数据表达式
     'expr': 1,//mx-expr 保留
+    'role': 1,//mx-role保留，指定是什么组件
     'host': 1,//mx-host 指示绑定到哪个view上
     'syncexpr': 1,//mx-syncexpr 同步数据表达式
     'syncto': 1,//mx-syncto 从界面同步数据到js时，指示同步到哪个view上
+    'reset': 1,//还原属性
     'processor': 1//mx-processor 保留
 };
 let innerKeys = Object.keys(reserveKeys).join('\\b|');
@@ -41,7 +44,7 @@ module.exports = {
     microTmplCommand: /<%[\s\S]*?%>/g,
     revisableReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/,
     revisableGReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/g,
-    revisableTail: '$' + Math.random().toString(16).replace(/\./g, '$'),
+    revisableTail: '$' + crypto.randomInt(2 ** 47).toString(16),
     selfCssRefReg: /@:(@keyframes|@font-face)?\(\.?([\w\-_:]+)\)/g,
     galleryFileNames: ['_config', 'config', 'cfg', '_cfg'],
     galleryFileSuffixes: ['mjs', 'js'],
@@ -136,6 +139,7 @@ module.exports = {
     quickElseAttr: 'qk:else',
     quickSourceArt: 'qk:srcart',
     quickDeclareAttr: 'qk:declare',
+    quickNeedHostAttr: 'qk:needhost',
     quickGroupFnPrefix: '$slots.',
     quickGroupObjectPrefix: '$slots.',
     quickGroupObjectPrefix1: '$slots[',

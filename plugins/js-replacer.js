@@ -48,12 +48,12 @@ let actions = {
     },
     as(file) {
         return style(file).then(css => {
-            return JSON.stringify(['global-' + styleId(file), css]).slice(1, -1);
+            return JSON.stringify([styleId('global') + '-' + styleId(file), css]).slice(1, -1);
         });
     },
     global(file) {
         return style(file).then(css => {
-            return JSON.stringify(['global-' + styleId(file), css]).slice(1, -1);
+            return JSON.stringify([styleId('global') + '-' + styleId(file), css]).slice(1, -1);
         });
     },
     compiled(file, e) {

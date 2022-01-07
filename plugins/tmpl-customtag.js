@@ -3,8 +3,6 @@
  */
 let fs = require('fs');
 let path = require('path');
-let url = require('url');
-let qs = require('querystring');
 let configs = require('./util-config');
 let tmplCmd = require('./tmpl-cmd');
 let chalk = require('chalk');
@@ -14,6 +12,7 @@ let customConfig = require('./tmpl-customtag-cfg');
 let atpath = require('./util-atpath');
 let qblance = require('./tmpl-qblance');
 let regexp = require('./util-rcache');
+let md5 = require('./util-md5');
 // let generic = require('./js-generic');
 // let jsFileCache = require('./js-fcache');
 let {
@@ -74,12 +73,12 @@ let entities = {
     '>': '&gt;',
     '<': '&lt;'
 };
-let decodeEntities = {
-    '&gt;': '>',
-    '&lt;': '<'
-};
+// let decodeEntities = {
+//     '&gt;': '>',
+//     '&lt;': '<'
+// };
 let encodeRegexp = /[<>]/g;
-let decodeRegexp = /&(lt|gt);/g;
+//let decodeRegexp = /&(lt|gt);/g;
 let atDesc = (a, b) => b.at - a.at;
 let encodeEntities = m => m.replace(encodeRegexp, _ => entities[_]);
 let toParamKey = key => {
@@ -269,12 +268,11 @@ let innerGroup = (result) => {
     let tag = tmplGroupTag;
     let newAttrs = ``;
     result.attrs.replace(attrNameValueReg, (m, prefix, key, q, value) => {
-        if (key == 'use') {
-            //使用场景下，清空内容
-            //result.content = '';
-            newAttrs += ` ${tmplGroupUseAttr}="${value}"`;
-        } else if (key == 'name') {
-            newAttrs += ` ${tmplGroupKeyAttr}="${value}"`;
+        if (key == 'use' ||
+            key == 'name') {
+            value = '__' + (configs.debug ? 'mx-slots-' + value : md5(value, 'tmpl-of-slots'));
+            let attrName = key == 'use' ? tmplGroupUseAttr : tmplGroupKeyAttr;
+            newAttrs += ` ${attrName}="${value}"`;
         } else {
             newAttrs += ` ${key}${q ? `="${value}"` : ''}`;
         }
@@ -709,22 +707,20 @@ module.exports = {
             //console.log(attrs);
             attrs = attrs.replace(mxViewAttrReg, (m, q, c) => {
                 //console.log(m, q, c);
-                let { pathname, query } = url.parse(c);
-                //console.log('pn', pathname, c);
+                let [pathname, searchParams = ''] = c.split('?');
+                //console.log(pathname,searchParams,c);
                 pathname = pathname || '';
                 pathname = addAtIfNeed(pathname);
                 pathname = atpath.resolveContent(pathname, e.moduleId);
                 //console.log('xxx', pathname);
-                let params = [];
-                query = qs.parse(query, '&', '=', {
-                    decodeURIComponent(v) {
-                        return v;
-                    }
-                });
-                for (let p in query) {
-                    let v = query[p];
+                let params = new URLSearchParams(searchParams);
+                let hasAppend;
+                //console.log(Object.fromEntries(params.entries()));
+                for (let [k, v] of params) {
+                    //console.log(k,v);
                     v = addAtIfNeed(v);
-                    params.push(`${p}=${v}`);
+                    params.set(k, v);
+                    hasAppend = 1;
                 }
                 let viewInfo = {
                     path: pathname,
@@ -735,8 +731,8 @@ module.exports = {
                 //console.log(pathname,'a');
                 //console.log(view);
                 //params.push(`a={{@$_temp}}`);
-                if (params.length) {
-                    view += `?${params.join('&')}`;
+                if (hasAppend) {
+                    view += `?${params.toString()}`;
                 }
                 //console.log(view);
                 return ` \x02="${view}"`;

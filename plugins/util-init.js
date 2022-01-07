@@ -38,6 +38,8 @@ module.exports = () => {
             let hashName = md5.byNum(utils.hash(srcName));
             if (hashName.length < srcName.length) {
                 configs.hashedProjectName = hashName;
+            } else {
+                configs.hashedProjectName = srcName;
             }
         }
         // if (configs.projectName === null) {

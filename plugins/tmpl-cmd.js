@@ -22,6 +22,8 @@ let cmdOutReg = /^<%([#=:!~])?([\s\S]*)%>$/;
 let artCtrlsReg = /^(?:<%'\x17?(\d+)\x11([^\x11]+)\x11\x17?'%>)?(<%[\s\S]+?%>)$/;
 let artCtrlsReg1 = /<%'\d+\x11([^\x11]+)\x11'%>(<%[\s\S]+?%>)/g;
 let isLineArtCtrlsReg = /^<%'(\d+)\x11([^\x11]+)\x11'%>$/;
+let valuableAttrReg = /\x07\d+\x07\s*\?\?\s*/;
+let booleanAttrReg = /\x07\d+\x07\s*\?\s*/;
 
 let getInnerHTML = (node, except = null, withOuter = false) => {
     if (node.type == 3) {
@@ -191,6 +193,16 @@ module.exports = {
         return this.recover(cmd, refTmplCommands).replace(artCtrlsReg1, '{{$1}}');
     },
     extractCmdContent(cmd, refTmplCommands) {
+        let valuableExpr = valuableAttrReg.test(cmd),
+            booleanExpr;
+        if (!valuableExpr) {
+            booleanExpr = booleanAttrReg.test(cmd);
+        }
+        if (valuableExpr) {
+            cmd = cmd.trim().slice(0, -2);
+        } else if (booleanExpr) {
+            cmd = cmd.trim().slice(0, -1);
+        }
         let oc = this.recover(cmd, refTmplCommands);
         let am = oc.match(artCtrlsReg);
         let old = '', line = -1, art = '';
@@ -206,14 +218,39 @@ module.exports = {
                     succeed: false
                 };
             }
+            let operate = ocm[1] || '';
+            let content = ocm[2];
+            let bindExpr = '',
+                bindCtrl = '',
+                bindLiteral = false;
+            if (operate == ':') {
+                let leftBrace = content.indexOf('{');
+                if (leftBrace > -1) {
+                    bindCtrl = content.substring(leftBrace).trim();
+                    bindExpr = content.substring(0, leftBrace - 1).trim();
+                    if (bindExpr.endsWith('&')) {
+                        bindExpr = bindExpr.slice(0, -1).trim();
+                    }
+                    bindLiteral = true;
+                } else {
+                    let temp = content.split('&');
+                    bindExpr = temp.shift().trim();
+                    bindCtrl = temp.join('&').trim();
+                }
+            }
             return {
+                succeed: true,
                 isArt: !!art,
                 line,
                 art: art || ocm[2],
                 origin: art || old,
-                succeed: true,
-                operate: ocm[1] || '',
-                content: ocm[2]
+                operate,
+                content,
+                bindLiteral,
+                bindExpr,
+                bindCtrl,
+                booleanExpr,
+                valuableExpr
             };
         }
         return {

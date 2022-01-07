@@ -4,6 +4,7 @@
  */
 
 let path = require('path');
+let crypto = require('crypto');
 let configs = require('./util-config');
 let fcache = require('./util-fcache');
 
@@ -84,7 +85,7 @@ let cloneAssign = (dest, src) => {
 let uId = (fix, str, withoutSuffix) => {
     let id;
     do {
-        id = Math.random().toString(36).replace(/[\d\.]/g, '');
+        id = crypto.randomInt(2 ** 47).toString(16);
     } while (~str.indexOf(id));
     return (fix || '') + id + (withoutSuffix ? '' : (fix || ''));
 };

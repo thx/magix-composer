@@ -81,7 +81,8 @@ let {
     tmplStaticKey,
     tmplTempInlineStaticKey,
     tmplGlobalDataRoot,
-    mxPrefix
+    mxPrefix,
+    quickNeedHostAttr
 } = require('./util-const');
 let utils = require('./util');
 let regexp = require('./util-rcache');
@@ -453,17 +454,17 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
                 source += `'+${content}+'`;
             }
         } else if (content) {
+            hasVarOut = true;
+            hasCtrl = true;
             if (line > -1) {
                 preArt = index;
                 //console.log(art);
                 source += `'+($__line=${line},$__art='{{${art}}}',`;
-                hasVarOut = true;
             } else {
                 ctrlCount++;
                 if (preArt == offset) {
                     source += `'')+'`;
                 }
-                hasCtrl = true;
                 source += `';`;
                 if (configs.debug) {
                     source += `$__ctrl='<%${ctrl}%>';`;
@@ -715,6 +716,8 @@ let parser = (tmpl, e) => {
                         value: a.value,
                         unary: false
                     });
+                } else if (a.name == quickNeedHostAttr) {
+                    token.needHost = true;
                 } else if (a.name == tmplTempInlineStaticKey) {
                     token.inlineStaticValue = a.value;
                 } else if (a.name == 'mx-html' ||
@@ -723,10 +726,10 @@ let parser = (tmpl, e) => {
                     token.xHTML = a.value;
                     token.hasXHTML = true;
                 } else if (a.name == tmplGroupKeyAttr) {
-                    token.groupKey = a.value;
+                    token.groupKey = safeVar(a.value);
                     token.groupKeyNode = tag == tmplGroupTag;
                 } else if (a.name == tmplGroupUseAttr) {
-                    token.groupUse = a.value;
+                    token.groupUse = safeVar(utils.camelize(a.value));
                     token.groupUseNode = tag == tmplGroupTag;
                 } else if (a.name == tmplGroupId) {
                     token.groupId = a.value;
@@ -768,7 +771,8 @@ let parser = (tmpl, e) => {
                             token.customBindTo = true;
                         } else if (a.name == 'mx-owner') {
                             token.hasMxOwner = true;
-                        } else if (a.name == 'mx-host') {
+                        } else if (a.name == 'mx-host' ||
+                            a.name == mxPrefix + 'host') {
                             token.bindHost = true;
                         } else if (a.name == 'mx-view') {
                             token.isMxView = true;
@@ -790,6 +794,7 @@ let parser = (tmpl, e) => {
                         }
                         let refCond = e.tmplConditionAttrs[cond];
                         let composer = {
+                            value: `{{${isRef ? '#' : '='}${extract.art}}}${refCond.valuable ? '??' : '?'}`,
                             hasExt: refCond.hasExt,
                             condContent: extract.content,
                             isRef,
@@ -800,7 +805,6 @@ let parser = (tmpl, e) => {
                             line: extract.line,
                             origin: extract.origin
                         };
-                        //console.log(a.name);
                         a.cond = composer;
                         if (a.name == 'x-html' ||
                             a.name == 'inner-html') {
@@ -818,7 +822,10 @@ let parser = (tmpl, e) => {
                             continue;
                         }
                         tmplCommandAnchorReg.lastIndex = 0;
-                        if (a.name == 'mx-updateby') {
+                        if (a.name == 'mx-ctrl' ||
+                            a.name == mxPrefix + 'ctrl') {
+                            token.syncFromUI = true;
+                        } else if (a.name == 'mx-updateby') {
                             token.updateByKeys = a.value;
                             ignoreAttr = true;
                         } else if (a.value.startsWith('\x07')) {
@@ -837,7 +844,8 @@ let parser = (tmpl, e) => {
                             token.customBindExpr = true;
                         } else if (a.name == 'mx-syncto') {
                             token.customBindTo = true;
-                        } else if (a.name == 'mx-host') {
+                        } else if (a.name == 'mx-host' ||
+                            a.name == mxPrefix + 'host') {
                             token.bindHost = true;
                         } else if (a.name == 'mx-view') {
                             token.isMxView = true;
@@ -854,7 +862,9 @@ let parser = (tmpl, e) => {
                         }
                     }
                     if (!ignoreAttr) {
-                        a.value = encodeDQuote(tmplUnescape(a.value));
+                        if (!a.unary) {
+                            a.value = encodeDQuote(tmplUnescape(a.value));
+                        }
                         aList.push(a);
                     }
                 }
@@ -867,17 +877,18 @@ let parser = (tmpl, e) => {
                 if (token.isMxView &&
                     configs.tmplSupportSlot) {
                     let inLooseGroup = isInGroupNode(token, groupDeclared.concat(groupUsed), true);
-                    addFromOrTo = true;
+                    //addFromOrTo = true;
                     token.hasFromOrTo = true;
+                    token.attrHasDynamicViewId = true;
                     if (inLooseGroup) {
                         aList.unshift({
-                            name: 'mx-to',
+                            name: 'mx-main',//mx-to
                             value: '\x05',
                             unary: false
                         });
                     } else {
                         aList.unshift({
-                            name: 'mx-from',
+                            name: 'mx-main',//from
                             value: '\x1f',
                             unary: false
                         });
@@ -887,6 +898,7 @@ let parser = (tmpl, e) => {
                     //!addFromOrTo &&
                     !token.hasMxOwner) {
                     token.hasMxOwner = true;
+                    token.attrHasDynamicViewId = true;
                     aList.unshift({
                         name: 'mx-owner',
                         value: '\x1f',
@@ -894,10 +906,12 @@ let parser = (tmpl, e) => {
                     });
                 }
             }
-            if ((token.customBindExpr &&
-                !token.customBindTo &&
-                !token.bindHost) ||
-                token.isRef) {
+            if ((token.customBindExpr ||
+                token.syncFromUI ||
+                token.needHost) && (
+                    !token.bindHost &&
+                    !token.customBindTo
+                )) {
                 token.attrHasDynamicViewId = true;
                 aList.unshift({
                     name: 'mx-host',
@@ -1553,6 +1567,7 @@ let process = (src, e) => {
                         a.name = mxPrefix + a.name.substring(2);
                     }
                     if (a.name.startsWith(mxPrefix) &&
+                        !a.unary &&
                         a.value.startsWith('\x1f\x1e')) {
                         a.value = a.value.replace(spanceAndSemicolonReg, '');
                         //debugger;
@@ -1586,8 +1601,8 @@ let process = (src, e) => {
                     }
                     if (attrKeys[a.name] === 1 &&
                         e.checker.tmplDuplicateAttr) {
-                        let v = a.unary ? '' : `="${a.value}"`;
-                        console.log(chalk.red('[MXC Tip(tmpl-quick)] duplicate attr:' + a.name), 'near:', chalk.magenta(node.tag + ':' + a.name + v), 'at file:', chalk.grey(e.shortHTMLFile));
+                        let v = a.unary ? '' : `="${a.cond ? a.cond.value : a.value}"`;
+                        console.log(chalk.red('[MXC Tip(tmpl-quick)] duplicate attr:' + a.name), 'near:', chalk.magenta(node.tag + '->' + a.name + v), 'at file:', chalk.grey(e.shortHTMLFile));
                         continue;
                     }
                     if (a.name == 'mx5-key') {
@@ -1789,8 +1804,6 @@ let process = (src, e) => {
                         }
                     }
                     attrsStr += '}';
-
-                    //console.log(node);
                     if (!hasCmdOut &&
                         !hasCtrl &&
                         !node.canHoisting &&
@@ -1856,7 +1869,7 @@ let process = (src, e) => {
                         console.log(chalk.red('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute'), 'at file:', chalk.grey(e.shortHTMLFile));
                         throw new Error('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute at file:' + e.shortHTMLFile);
                     }
-                    let newKey = quickGroupFnPrefix + safeVar(node.groupKey);// //`${quickGroupFnPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
+                    let newKey = quickGroupFnPrefix + node.groupKey;// //`${quickGroupFnPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
                     snippets.push(`\nif(!${newKey}){`);
 
                     let params = '';// = `$id = $viewId`;
@@ -1881,7 +1894,7 @@ let process = (src, e) => {
                 //console.log(node);
                 if (node.groupKeyNode) {
                     if (node.groupContextNode) {
-                        key = `$quick_slot_${staticUniqueKey}_${safeVar(node.groupKey)}_static_node`;
+                        key = `$quick_slot_${staticUniqueKey}_${node.groupKey}_static_node`;
                         if (!staticNodes[key] &&
                             node.children.length) {
                             staticNodes[key] = key;
@@ -1890,7 +1903,7 @@ let process = (src, e) => {
                             });
                         }
                     } else {
-                        key = quickGroupFnPrefix + safeVar(node.groupKey);
+                        key = quickGroupFnPrefix + node.groupKey;
                     }
                     if (node.children.length) {
                         snippets.push(`\r\nif(!${key}){\r\n`);
@@ -2126,8 +2139,8 @@ let process = (src, e) => {
                             //let src = `\r\n${prefix}=$vnode_${level + 1};`;
                             //snippets.push(src);
                             if (node.children.length) {
-                                snippets.push(`$quick_slot_${staticUniqueKey}_${safeVar(node.groupKey)}_static_node = $vnode_${level + 1};\n`);
-                                snippets.push(`\n}\nreturn $quick_slot_${staticUniqueKey}_${safeVar(node.groupKey)}_static_node;\n`);
+                                snippets.push(`$quick_slot_${staticUniqueKey}_${node.groupKey}_static_node = $vnode_${level + 1};\n`);
+                                snippets.push(`\n}\nreturn $quick_slot_${staticUniqueKey}_${node.groupKey}_static_node;\n`);
                                 if (configs.debug) {
                                     snippets.push(exTmpl);
                                 }
@@ -2143,11 +2156,11 @@ let process = (src, e) => {
                         snippets.push(`};\n}\n`);
                     } else if (node.canHoisting) {
                         if (node.children.length) {
-                            snippets.push(`$slots.${safeVar(node.groupKey)}=$vnode_${level + 1};\n`);
+                            snippets.push(`$slots.${node.groupKey}=$vnode_${level + 1};\n`);
                             snippets.push('}\n');
                         }
                     } else {
-                        snippets.push(`$slots.${safeVar(node.groupKey)}=$vnode_${level + 1};\n`);
+                        snippets.push(`$slots.${node.groupKey}=$vnode_${level + 1};\n`);
                     }
                 } else {
                     let prefix = (node.canHoisting || node.inlineStaticValue) ? `${key}=` : '', src = '';

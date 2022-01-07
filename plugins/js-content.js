@@ -393,18 +393,17 @@ let processContent = (from, to, content, inwatch) => {
                 let i = v.indexOf('/');
                 let mName = i === -1 ? v : v.substring(0, i);
                 let p, full;
-                if (mName === e.pkgName) {
+                if (mName == e.pkgName) {
                     p = atpath.resolvePath(`"${atViewPrefix}${v}"`, e.moduleId);
-                    full = v[0] == '@' ? p : atpath.resolvePath(`"${atViewPrefix}${p.slice(1, -1)}"`, e.moduleId);
-                    //console.log(full);
+                    full = atpath.resolvePath(`"${atViewPrefix}${p.slice(1, -1)}"`, e.moduleId);
                 } else {
                     full = v;
                     p = `"${v}"`;
                 }
-                if (e.deps.indexOf(p) === -1 &&
-                    e.deps.indexOf(full) === -1 &&
-                    e.exRequires.indexOf(p) === -1 &&
-                    e.exRequires.indexOf(full) == -1) {
+                if (!e.deps.includes(p) &&
+                    !e.deps.includes(full) &&
+                    !e.exRequires.includes(p) &&
+                    !e.exRequires.includes(full)) {
                     let prefix = '',
                         type = '';
                     if (e.loader == 'module') {

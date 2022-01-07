@@ -22,6 +22,7 @@ let {
     tmplGlobalVars,
     quickGroupObjectPrefix,
     quickGroupObjectPrefix1,
+    quickNeedHostAttr,
     revisableTail
 } = require('./util-const');
 let regexp = require('./util-rcache');
@@ -35,7 +36,7 @@ let textaraReg = /<textarea([^>]*)>([\s\S]*?)<\/textarea>/g;
 let groupKeyReg = new RegExp(`\\s${tmplGroupKeyAttr}="[^"]+"`);
 let groupContextReg = /\s+fn(?=\="([^"]+)"|\s|$)/;
 let mxViewAttrReg = /(?:\b|\s|^)mx-view\s*=\s*(['"])([\s\S]+?)\1/g;
-let checkboxReg = /(?:\b|\s|^)type\s*=\s*(['"])checkbox\1/;
+//let checkboxReg = /(?:\b|\s|^)type\s*=\s*(['"])checkbox\1/;
 let indeterminateReg = /(?:\b|\s|^)indeterminate(?:\b|\s|=|$)/;
 //let supportLocalReg = /^\x01\d+[a-zA-Z0-9_]+$/;
 let atRefOrAnalysePathExprReg = /<%([#~!])([\s\S]+?)%>/g;
@@ -69,8 +70,8 @@ let fnVariableReg = /\x18",([\s\S]+?),\s*"\s*(:)?/g;
 let stringReg1 = /^'[^']*'$/;
 let stringReg2 = /^"[^"]*"$/;
 let stringReg3 = /^`[^`]*`$/;
-let hasVar1 = /'\+/;
-let hasVar2 = /\+'/;
+//let hasVar1 = /'\+/;
+//let hasVar2 = /\+'/;
 let escapeSQ = str => str.replace(/['\\]/g, '\\$&');
 let efCache = Object.create(null);
 let extractFunctions = (expr) => { //获取绑定的其它附加信息，如 <%:user.name<change,input>({refresh:true,required:true})%>  =>  evts:change,input  expr user.name  fns  {refresh:true,required:true}
@@ -1113,7 +1114,7 @@ module.exports = {
         };
         fn = fn.replace(tagReg, (_, tag, attrs) => {
             let hasMagixView = mxViewAttrReg.test(attrs); //是否有mx-view属性
-            let hasIndeter = checkboxReg.test(attrs) && indeterminateReg.test(attrs);
+            let hasIndeter = indeterminateReg.test(attrs);
             attrs = tmplCmd.recover(attrs, cmdStore, recoverString); //还原
             //console.log(JSON.stringify(attrs));
             let findCount = 0;
@@ -1397,9 +1398,9 @@ module.exports = {
                 syncFromUI = true;
                 attrs = ' mx-ctrl="[' + mxRefExprInfo.join(',') + ']" ' + attrs;
             }
-            if (syncFromUI ||
-                hasIndeter) {
-                attrs = ' mx-host="\x1f"' + attrs;
+            if (hasIndeter ||
+                syncFromUI) {
+                attrs = ' ' + quickNeedHostAttr + attrs;
             }
 
             if (hasMagixView) {
