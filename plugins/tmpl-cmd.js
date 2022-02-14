@@ -1,7 +1,7 @@
 /*
     模板指令处理
  */
-let chalk = require('chalk');
+let chalk = require('ansis');
 let configs = require('./util-config');
 let htmlminifier = require('html-minifier');
 let jsGeneric = require('./js-generic');

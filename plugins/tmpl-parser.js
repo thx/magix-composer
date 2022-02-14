@@ -1,6 +1,6 @@
 let htmlParser = require('./html-parser');
 let { nativeTags, svgTags, mathTags, svgUpperTags } = require('./html-tags');
-let chalk = require('chalk');
+let chalk = require('ansis');
 let util = require('util');
 let utils = require('./util');
 let configs = require('./util-config');
@@ -213,7 +213,7 @@ module.exports = (input, htmlFile, walk) => {
                     }
                     if (a.value.includes('>') ||
                         a.value.includes('<')) {
-                        //token.needEncode = true;
+                        token.needEncode = true;
                     }
                 } else if (!tmplCommandAnchorReg.test(a.name)) {
                     aList.push(a);

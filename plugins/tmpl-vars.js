@@ -3,7 +3,7 @@
     压缩模板引擎代码
  */
 let acorn = require('./js-acorn');
-let chalk = require('chalk');
+let chalk = require('ansis');
 let tmplCmd = require('./tmpl-cmd');
 let configs = require('./util-config');
 let utils = require('./util');
@@ -57,6 +57,7 @@ let stringHolderReg = /(['"])?(\x04\d+\x04)\1/g;
 let refKeyReg = /,'\x1e[#a-zA-Z0-9]+'$/;
 let globalTmplRootReg = /[\x03\x06]\./g;
 let namedOfRefData = /^<%#([\s\S]+),'\x1e[\s\S]+'%>$/;
+let recastSlots = /\$slots\./g;
 let cmap = {
     [vphUse]: '\x01',
     [vphDcd]: '\x02',
@@ -336,6 +337,79 @@ let PeelPatternVariable = (fn, node, htmlFile) => {
     return a.join('');
 };
 
+let PeelTemplateLiteral = (fn, node, htmlFile) => {
+    let content = '';
+    if (node.expressions.length) {
+        let index = 0;
+        for (let e of node.expressions) {
+            let s = node.quasis[index];
+            if (content) {
+                content += '+';
+            }
+            if (s.value.raw) {
+                content += `'${escapeSQ(s.value.raw)}'`;
+            }
+            if (content) {
+                content += '+';
+            }
+            content += fn.slice(e.start, e.end);
+            index++;
+        }
+        let s = node.quasis[index];
+        if (content) {
+            content += '+';
+        }
+        if (s.value.raw) {
+            content += `'${escapeSQ(s.value.raw)}'`;
+        }
+        //console.log(content);
+    } else {
+        content = fn.slice(node.start, node.end);
+    }
+    return content;
+};
+
+let translateEscapeSingleQuote = expr => {
+    let r = [],
+        inStr = false,
+        strStart = '',
+        escaped = false;
+    for (let i = 0; i < expr.length; i++) {
+        let c = expr[i];
+        if (!inStr) {
+            if (c == '\'' ||
+                c == '"') {
+                inStr = true;
+                strStart = c;
+                r.push(c);
+            } else {
+                r.push(c);
+            }
+        } else {
+            if (c == '\\') {
+                escaped = !escaped;
+                if (!escaped) {
+                    r.push('\\\\');
+                }
+            } else if (escaped) {
+                if (c == '\'') {
+                    r.push('`');
+                } else {
+                    r.push('\\' + c);
+                }
+                escaped = false;
+            } else if (c == strStart) {
+                inStr = false;
+                escaped = false;
+                r.push(c);
+            } else {
+                r.push(c);
+            }
+        }
+    }
+    return r.join('');
+};
+
 let isLiteralValue = v => {
     if (v === 'true' ||
         v === 'false' ||
@@ -472,7 +546,7 @@ module.exports = {
         let constVars = Object.create(null);
         let patternChecker = (node, instead) => {
             let msg = '[MXC Error(tmpl-vars)] unpupport ' + node.type + ' near `' + toSourceHTML(fn.substring(node.start, node.end)) + '`';
-            console.log(chalk.red(msg), 'at', chalk.grey(sourceFile), (instead ? chalk.magenta(`use ${instead} instead`) : ''));
+            console.log(chalk.red(msg), 'at', chalk.gray(sourceFile), (instead ? chalk.magenta(`use ${instead} instead`) : ''));
             throw new Error(msg);
         };
         let pattersObject = Object.create(null);
@@ -566,7 +640,7 @@ module.exports = {
                         case 'ObjectExpression':
                         case 'FunctionExpression':
                         case 'ArrowFunctionExpression':
-                            console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid declare ' + fn.substring(node.start, node.end)), 'at', chalk.grey(sourceFile));
+                            console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid declare ' + fn.substring(node.start, node.end)), 'at', chalk.gray(sourceFile));
                             break;
                     }
                 }
@@ -603,6 +677,14 @@ module.exports = {
                     });
                 }
             },
+            // TemplateLiteral(node) {
+            //     console.log(fn.slice(node.start,node.end));
+            //     modifiers.push({
+            //         start: node.start,
+            //         end: node.end,
+            //         content: PeelTemplateLiteral(fn, node, e.shortHTMLFile)
+            //     });
+            // },
             ExpressionStatement(node) {
                 let expr = node.expression;
                 if (expr.type == 'AssignmentExpression') {
@@ -743,7 +825,7 @@ module.exports = {
                     let r = queryVarsByPos(node.start);
                     if (!r[lname]) {
                         //模板中使用如<%list=20%>这种，虽然可以，但是不建议使用，因为在模板中可以修改js中的数据，这是非常不推荐的
-                        console.log(chalk.red('[MXC Tip(tmpl-vars)] undeclare variable:' + lname), 'at', chalk.grey(sourceFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-vars)] undeclare variable:' + lname), 'at', chalk.gray(sourceFile));
                         globalVars[lname] = 1;
                     } else {
                         let left = node.left;
@@ -762,7 +844,7 @@ module.exports = {
                     let r = queryVarsByPos(node.start);
                     if (!r[start.name]) {
                         globalVars[start.name] = 1;
-                        console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid writeback: ' + fn.slice(node.start, node.end)), 'at', chalk.grey(sourceFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid writeback: ' + fn.slice(node.start, node.end)), 'at', chalk.gray(sourceFile));
                     }
                 }
             },
@@ -770,7 +852,7 @@ module.exports = {
                 let tname = node.id.name;
                 if (globalVars[tname] || globalVars[tname]) {
                     let msg = '[MXC Error(tmpl-vars)] avoid redeclare variable:' + tname;
-                    console.log(chalk.red(msg), 'at', chalk.grey(sourceFile));
+                    console.log(chalk.red(msg), 'at', chalk.gray(sourceFile));
                     throw new Error(msg);
                 }
                 let r = queryRangeByPos(node.start);
@@ -842,7 +924,7 @@ module.exports = {
             AssignmentExpression(node) {
                 if (!node.left.name) {
                     let msg = '[MXC Error(tmpl-vars)] avoid assignment to object:' + recoverString(stripChar(stripNum(fn.slice(node.start, node.end)))).replace(globalTmplRootReg, '');
-                    console.log(chalk.red(msg), 'at', chalk.grey(sourceFile));
+                    console.log(chalk.red(msg), 'at', chalk.gray(sourceFile));
                     throw new Error(msg);
                 }
                 let key = stripChar(node.left.name);
@@ -919,7 +1001,7 @@ module.exports = {
                 return [prefix()];
                 // let currentExpr = toOriginalExpr(expr.trim());
                 // let usedByExpr = toOriginalExpr(srcExpr.trim());
-                // console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve complex expression: ' + currentExpr + ' used by ' + usedByExpr), 'at', chalk.grey(sourceFile));
+                // console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve complex expression: ' + currentExpr + ' used by ' + usedByExpr), 'at', chalk.gray(sourceFile));
                 return [expr];
             }
             let ps = jsGeneric.splitExpr(expr);//表达式拆分，如user[name][key[value]]=>["user","[name]","[key[value]"]
@@ -940,7 +1022,7 @@ module.exports = {
             if (!info) {
                 if (!prefix) {
                     let tipExpr = toOriginalExpr(srcExpr.trim());
-                    console.log(chalk.red('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.grey(sourceFile), 'check variable reference or global variable declaration,read more: https://github.com/thx/magix/issues/37');
+                    console.log(chalk.red('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.gray(sourceFile), 'check variable reference or global variable declaration,read more: https://github.com/thx/magix/issues/37');
                     return ['<%throw new Error("can not resolve ref expression")%>'];
                 }
                 return [prefix()];
@@ -987,14 +1069,15 @@ module.exports = {
                 result = rebuild.join('.');
             } else {
                 //["user","[name]","[key[value]"]=> user.<%=name%>.<%=key[value]%>
+
                 for (let i = 0, one; i < result.length; i++) {
                     one = result[i].replace(numIndexReg, '$1');
                     if (one.charAt(0) == '[' &&
                         one.charAt(one.length - 1) == ']') {
                         one = '<%=' + one.slice(1, -1) + '%>';
                         vars.push(one);
-                        result[i] = one;
                     }
+                    result[i] = one;
                 }
                 result = result.join('.');
             }
@@ -1119,6 +1202,7 @@ module.exports = {
             //console.log(JSON.stringify(attrs));
             let findCount = 0;
             let mxRefExprInfo = [];
+            let mxExprInfo = [];
             let syncPaths = [];
             //console.log(attrs);
             let atRefOriginSource = ' _p_:refs="';
@@ -1173,9 +1257,8 @@ module.exports = {
                 // if (!keys.length) {
                 //     canUse = false;
                 // let tipExpr = toOriginalExpr(m.trim());
-                // console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.grey(sourceFile), 'use like [locked,item.locked,\'ext string\',locked||item.locked]}');
+                // console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.gray(sourceFile), 'use like [locked,item.locked,\'ext string\',locked||item.locked]}');
                 //}
-
                 for (let k of keys) {
                     if (!k.startsWith('"') &&
                         !k.startsWith("'")) {
@@ -1207,11 +1290,10 @@ module.exports = {
                             ks.push(ref);
                         }
                     }
-                    key = ks.join('+\'.\'+').replace(/'\+'/g, '');
+                    key = translateEscapeSingleQuote(ks.join('+\'.\'+').replace(/'\+'/g, ''));
                     if (!isAnalysePath) {
                         key = `'auto_key_` + key.substring(1);
                     }
-                    //console.log(key);
                     if (!configs.debug &&
                         !isAnalysePath) {
                         let sKeys = jsGeneric.splitString(key);
@@ -1244,7 +1326,8 @@ module.exports = {
                     if (isAnalysePath ||
                         isUniquePath) {
                         let tipExpr = toOriginalExpr(m.trim());
-                        console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.grey(sourceFile));
+                        console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve ref expression: ' + tipExpr), 'at', chalk.gray(sourceFile));
+                        key = `'analyse expr failed'`;
                     }
                 }
                 if (!isAnalysePath) {
@@ -1283,6 +1366,7 @@ module.exports = {
                 //     let last = key.charAt(key.length - 1);
                 //     key = key.slice(0, -1) + '.' + shortHTMLUId + '.' + last + '+$id';
                 // }
+                key = key.replace(recastSlots, '$slots_');
                 return {
                     canUse,
                     key,
@@ -1297,9 +1381,26 @@ module.exports = {
                         syncPaths.push(v);
                     }
                 }
+                mxExprInfo.push(expr.result);
                 let e = `${art}['${expr.result}'`;
                 if (exprInfo.fns) {
                     e += `,` + exprInfo.fns.replace(atRefOrAnalysePathExprReg, (m, pfx, cmd) => {
+                        //识别`${ab}`或a+b表达式，这种不需要$keyOf函数中转数据
+                        if (cmd.includes('`') ||
+                            cmd.includes('"') ||
+                            cmd.includes(`'`) ||
+                            cmd.includes('+') ||
+                            cmd.includes('-') ||
+                            cmd.includes('*') ||
+                            cmd.includes('!') ||
+                            cmd.includes('/') ||
+                            cmd.includes('~') ||
+                            cmd.includes('^') ||
+                            cmd.includes('<') ||
+                            cmd.includes('>') ||
+                            cmd.includes('%')) {
+                            return `<%=${cmd}%>`;
+                        }
                         let ref = transformAtOrRefExpr(cmd, pfx, m);
                         if (ref.canUse) {
                             return `<%#${ref.cmd},\x00xl\x00${ref.key}%>`;
@@ -1309,7 +1410,7 @@ module.exports = {
                 }
                 /*
                     对于view的绑定，如
-                    <mx-calendar.rangepicker start="{{:date.start}}" end="{{:date.end}}"/>
+                    <mx-calendar.rangepicker *start="{{:date.start}}" *end="{{:date.end}}"/>
                     不像input，只能读取value这唯一输入源。
                     自定义的情况下，输入源可以有多个，那么当我们绑定时，需要知道当前绑定表达式对应的属性是什么，从而来确定如何从输入源中把数据取出来
                 */
@@ -1383,7 +1484,7 @@ module.exports = {
                 let ref = transformAtOrRefExpr(cmd, pfx, m);
                 if (isAnalysePath) {
                     syncFromUI = true;
-                    return `<%${ref.key}%>`;
+                    return `<%=${ref.key}%>`;
                 }
                 //console.log(ref,m);
                 if (ref.canUse) {
@@ -1394,9 +1495,8 @@ module.exports = {
                 return m;
             });
             if (findCount > 0) {
-                //console.log(mxRefExprInfo);
                 syncFromUI = true;
-                attrs = ' mx-ctrl="[' + mxRefExprInfo.join(',') + ']" ' + attrs;
+                attrs = ' mx-expr="' + mxExprInfo.join(configs.tmplBindExprSpliter) + '" mx-ctrl="[' + mxRefExprInfo.join(',') + ']" ' + attrs;
             }
             if (hasIndeter ||
                 syncFromUI) {
@@ -1422,8 +1522,7 @@ module.exports = {
                     attrs = ` ${tmplMxViewParamKey}="${keys}"${attrs}`;
                 }
             }
-            let prefix = '';
-            return prefix + '<' + tag + attrs + '>';
+            return '<' + tag + attrs + '>';
         });
         fn = tmplCmd.store(fn, cmdStore);
         if (configs.tmplSupportSlot) {

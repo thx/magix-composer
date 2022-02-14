@@ -1,6 +1,6 @@
 //https://github.com/marcosbasualdo/UnclosedHtmlTags/blob/master/index.js
 
-//let chalk = require('chalk');
+//let chalk = require('ansis');
 let configs = require('./util-config');
 let htmlParser = require('./html-parser');
 let tmplArtCtrl = require('./tmpl-art-ctrl');

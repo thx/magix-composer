@@ -1,6 +1,6 @@
 let configs = require('./util-config');
 let consts = require('./util-const');
-let chalk = require('chalk');
+let chalk = require('ansis');
 
 let ItemUsed = 1;
 let ItemDeclared = 2;
@@ -332,7 +332,7 @@ module.exports = {
                 let aimShort = aim.replace(configs.commonFolder, '').substring(1);
                 for (let selector in selectors) {
                     for (let key in selectors[selector]) {
-                        console.log('[MXC(checker)]', chalk.grey(hostShort), 'use unexist or unapplied', chalk.red(key), 'from', chalk.grey(aimShort));
+                        console.log('[MXC(checker)]', chalk.gray(hostShort), 'use unexist or unapplied', chalk.red(key), 'from', chalk.gray(aimShort));
                     }
                 }
             }
@@ -340,7 +340,7 @@ module.exports = {
         for (let p in FileStylesComplex) {
             let short = p.replace(configs.commonFolder, '').substring(1);
             let rules = FileStylesComplex[p];
-            console.log('[MXC(checker)]', chalk.grey(short) + ' avoid use ' + chalk.red(`"${rules.join('","')}"`));
+            console.log('[MXC(checker)]', chalk.gray(short) + ' avoid use ' + chalk.red(`"${rules.join('","')}"`));
         }
 
         for (let fn in declared) {
@@ -370,16 +370,16 @@ module.exports = {
                 }
             }
             if (neverUsedSelectors.length) {
-                console.log('[MXC(checker)]', chalk.grey(short) + ' never used selectors ' + chalk.red(`"${neverUsedSelectors.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.gray(short) + ' never used selectors ' + chalk.red(`"${neverUsedSelectors.join('","')}"`));
             }
             if (neverUsedTagsOrAttrs.length) {
-                console.log('[MXC(checker)]', chalk.grey(short) + ' never used tags or attrs ' + chalk.red(`"${neverUsedTagsOrAttrs.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.gray(short) + ' never used tags or attrs ' + chalk.red(`"${neverUsedTagsOrAttrs.join('","')}"`));
             }
             if (neverUsedVars.length) {
-                console.log('[MXC(checker)]', chalk.grey(short) + ' never used vars(properties) ' + chalk.red(`"${neverUsedVars.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.gray(short) + ' never used vars(properties) ' + chalk.red(`"${neverUsedVars.join('","')}"`));
             }
             if (neverUsedAtRules.length) {
-                console.log('[MXC(checker)]', chalk.grey(short) + ' never used at rules ' + chalk.red(`"${neverUsedAtRules.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.gray(short) + ' never used at rules ' + chalk.red(`"${neverUsedAtRules.join('","')}"`));
             }
         }
 
@@ -407,12 +407,12 @@ module.exports = {
                 }
             }
             if (undeclared.length) {
-                console.log('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(`"${undeclared.join('","')}"`));
+                console.log('[MXC(checker)]', chalk.gray(short), 'used undeclared', chalk.red(`"${undeclared.join('","')}"`));
             }
         }
         for (let fu in FileUnexists) {
             let short = fu.replace(configs.commonFolder, '').substring(1);
-            console.log('[MXC(checker)]', chalk.grey(short), 'can not find', chalk.red(FileUnexists[fu]));
+            console.log('[MXC(checker)]', chalk.gray(short), 'can not find', chalk.red(FileUnexists[fu]));
         }
         for (let host in FileStylesGlobalVarUsed) {
             let short = host.replace(configs.commonFolder, '').substring(1);
@@ -421,7 +421,7 @@ module.exports = {
             for (let key in dest) {
                 if (!used ||
                     used[key] != ItemDeclared) {
-                    console.log('[MXC(checker)]', chalk.grey(short), 'used undeclared', chalk.red(key));
+                    console.log('[MXC(checker)]', chalk.gray(short), 'used undeclared', chalk.red(key));
                 }
             }
         }

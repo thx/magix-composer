@@ -3,7 +3,7 @@
  */
 let path = require('path');
 let fs = require('fs');
-let chalk = require('chalk');
+let chalk = require('ansis');
 let utils = require('./util');
 let fd = require('./util-fd');
 let deps = require('./util-deps');

@@ -1,6 +1,6 @@
 
 let { selfCloseTags: empty } = require('./html-tags');
-let chalk = require('chalk');
+let chalk = require('ansis');
 let IS_REGEX_CAPTURING_BROKEN = false;
 'x'.replace(/x(.)?/g, function (m, g) {
     IS_REGEX_CAPTURING_BROKEN = g === '';

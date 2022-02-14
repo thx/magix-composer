@@ -2,7 +2,7 @@
     js内容处理
     mx单文件转换->开始编译钩子(beforeProcessor,es6->es3)->js中的@规则识别及代码检查->处理样式->处理模板->处理js代码片断->编译结束钩子->缓存文件内容
  */
-let chalk = require('chalk');
+let chalk = require('ansis');
 let fd = require('./util-fd');
 let jsMx = require('./js-mx');
 let jsDeps = require('./js-deps');

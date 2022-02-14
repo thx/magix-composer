@@ -4,7 +4,7 @@
     2.　检测单双引号的实体转义
     3.　检测不支持的写法
  */
-let chalk = require('chalk');
+let chalk = require('ansis');
 let utils = require('./util');
 let jsGeneric = require('./js-generic');
 let tmplCmd = require('./tmpl-cmd');
@@ -27,7 +27,7 @@ let processQuot = (str, refTmplCommands, mxEvent, e, toSrc) => {
                 if (o == '#' &&
                     !onlyCmdReg.test(str)) {
                     let src = toSrc(str);
-                    console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('unsupport ' + src), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent));
+                    console.log(chalk.magenta('[MXC Tip(checker-tmpl)]'), chalk.red('unsupport ' + src), 'at', chalk.gray(e.shortHTMLFile), 'in', chalk.magenta(mxEvent));
                 }
                 if (o == '=') {
                     return '<%=$encodeQuote(' + c + ')%>';
@@ -79,7 +79,7 @@ let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
                     .replace(cmdReg, m => refTmplCommands[m])
                     .replace(removeTempReg, '');
 
-                console.log(chalk.magenta(`[MXC Tip(tmpl-attr-mxevent)]`), chalk.red('beware!'), 'You should use', chalk.magenta(tip), 'instead of', chalk.magenta(tipRaw), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
+                console.log(chalk.magenta(`[MXC Tip(tmpl-attr-mxevent)]`), chalk.red('beware!'), 'You should use', chalk.magenta(tip), 'instead of', chalk.magenta(tipRaw), 'at', chalk.gray(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
             }
             let eq = jsGeneric.escapeQ(replacement, q);
             replacement = replacement.replace(cmdPHReg, m => store[m]);
@@ -126,7 +126,7 @@ let encodeParams = (params, refTmplCommands, mxEvent, e, toSrc) => {
                         if (oCmd) {
                             oCmd.replace(unsupportOutCmdReg, m => {
                                 m = m.replace(removeTempReg, '');
-                                console.log(chalk.red('[MXC Error(tmpl-attr-mxevent)] unsupport ' + m), 'at', chalk.grey(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
+                                console.log(chalk.red('[MXC Error(tmpl-attr-mxevent)] unsupport ' + m), 'at', chalk.gray(e.shortHTMLFile), 'in', chalk.magenta(mxEvent.replace(removeTempReg, '')));
                             });
                         }
                     });

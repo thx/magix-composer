@@ -5,7 +5,7 @@
  * 因为属性中不区分大小写，因此约定的user-id会转成userId
  * src中的参数不作任何处理，只把属性中的参数追加到src中
  */
-let chalk = require('chalk');
+let chalk = require('ansis');
 let tmplCmd = require('./tmpl-cmd');
 let tmplUnescape = require('html-entities-decoder');
 let classRef = require('./tmpl-attr-classref');

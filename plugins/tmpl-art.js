@@ -54,7 +54,7 @@ https://thx.github.io/crox/
 */
 let utils = require('./util');
 let configs = require('./util-config');
-let chalk = require('chalk');
+let chalk = require('ansis');
 let artExpr = require('./tmpl-art-ctrl');
 let htmlAttrs = require('./html-attrs');
 let ifForReg = /^\s*(if|for)\s*\(/;
@@ -147,14 +147,14 @@ let checkStack = (stack, key, code, e, lineNo) => {
             } else {
                 args.push('at file');
             }
-            args.push(chalk.grey(e.shortHTMLFile));
+            args.push(chalk.gray(e.shortHTMLFile));
             console.log(...args);
             throw new Error(`[MXC Error(tmpl-art)] unexpected ${code}`);
         }
     } else if (stack.length) {
         for (let s, i = stack.length; i--;) {
             s = stack[i];
-            console.log(chalk.red(`[MXC Error(tmpl-art)] unclosed "${s.ctrl}" at line:${s.ln}`), ', at file', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.red(`[MXC Error(tmpl-art)] unclosed "${s.ctrl}" at line:${s.ln}`), ', at file', chalk.gray(e.shortHTMLFile));
         }
         throw new Error(`[MXC Error(tmpl-art)] unclosed art ctrls at ${e.shortHTMLFile}`);
     }
@@ -199,7 +199,7 @@ let syntax = (code, e, lineNo) => {
             object = asExpr.iterator,
             init = false;
         if (asExpr.bad || asExpr.splitter != 'as') {
-            console.log(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad each {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad each {{${code}}} at line:${lineNo}`), 'file', chalk.gray(e.shortHTMLFile));
             throw new Error('[MXC Error(tmpl-art)] unsupport or bad each {{' + code + '}}');
         }
         if (asExpr.value) {
@@ -250,7 +250,7 @@ let syntax = (code, e, lineNo) => {
             init = true;
         }
         if (asExpr.bad || asExpr.splitter != 'as') {
-            console.log(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad forin {{${code}}} at line:${lineNo}`), 'file', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.red(`[MXC Error(tmpl-art)] unsupport or bad forin {{${code}}} at line:${lineNo}`), 'file', chalk.gray(e.shortHTMLFile));
             throw new Error('[MXC Error(tmpl-art)] unsupport or bad forin {{' + code + '}}');
         }
         let key1 = asExpr.index || utils.uId('$art_k', code);

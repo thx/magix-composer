@@ -91,7 +91,7 @@ let tmplUnescape = require('html-entities-decoder');
 let md5 = require('./util-md5');
 //let isMethodReg = /^\s*[a-zA-Z0-9$_]+\([\s\S]+?\)\s*$/;
 let numString = /^'(-?[0-9_](?:[0-9_]*|\.[0-9_]+))'$/;
-let chalk = require('chalk');
+let chalk = require('ansis');
 let jsGeneric = require('./js-generic');
 let viewIdReg = /\x1f/g;
 let artCtrlReg = /(?:<%'(\d+)\x11([^\x11]+)\x11'%>)?<%([#=:&])?([\s\S]+?)%>/g;
@@ -239,7 +239,17 @@ let isVarName = str => {
     }
 
     return true;
-}
+};
+
+let checkInFunctionSlot = (token, map, snippet, file) => {
+    let start = token;
+    while (start) {
+        if (start.groupContextNode) {
+            console.log(chalk.gray(snippet), chalk.magenta(`use custom bind or sync expression in context slot fn="${start.groupContext}" at ${file}`));
+        }
+        start = map[start.pId];
+    }
+};
 let toNumberString = s => {
     if (numString.test(s)) {
         let r = s.replace(numString, '$1');
@@ -454,13 +464,14 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
                 source += `'+${content}+'`;
             }
         } else if (content) {
-            hasVarOut = true;
-            hasCtrl = true;
             if (line > -1) {
+                //hasCtrl = false;//调试中的原始行号和原始语句不作为控制语句
                 preArt = index;
+                hasVarOut = true;
                 //console.log(art);
                 source += `'+($__line=${line},$__art='{{${art}}}',`;
             } else {
+                hasCtrl = true;
                 ctrlCount++;
                 if (preArt == offset) {
                     source += `'')+'`;
@@ -485,14 +496,19 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         .replace(suffixReg, ';')
         .replace(condPlus, '+')
         .replace(endReg, '');
-    if (configs.debug && fromAttr && !hasOut && ctrlCount == 1) {
+    if (configs.debug &&
+        fromAttr &&
+        !hasOut &&
+        ctrlCount == 1) {
         source = source.replace(commaExprReg, '$1,') + ')';
     }
-    if (ctrlCount > 1 && !hasOut) {//如果超出1条控制语句，即使没有输出，也要认为有输出
+    if (ctrlCount > 1
+        && !hasOut) {//如果超出1条控制语句，即使没有输出，也要认为有输出
         hasOut = true;
     }
     let trimmedPrefix = false;
-    if (!hasOut || !hasCtrl) {
+    if (!hasOut ||
+        !hasCtrl) {
         reg = regexp.get(`^${regexp.escape(key)}=(?:'';+)?`);
         source = source.replace(reg, '');
         trimmedPrefix = true;
@@ -726,7 +742,7 @@ let parser = (tmpl, e) => {
                     token.xHTML = a.value;
                     token.hasXHTML = true;
                 } else if (a.name == tmplGroupKeyAttr) {
-                    token.groupKey = safeVar(a.value);
+                    token.groupKey = safeVar(utils.camelize(a.value));
                     token.groupKeyNode = tag == tmplGroupTag;
                 } else if (a.name == tmplGroupUseAttr) {
                     token.groupUse = safeVar(utils.camelize(a.value));
@@ -763,12 +779,15 @@ let parser = (tmpl, e) => {
                             ignoreAttr = true;
                         } else if (a.name == 'mx-bindexpr') {
                             token.customBindExpr = true;
-                        } else if (a.name == 'mx-bindto') {
-                            token.customBindTo = true;
-                        } if (a.name == 'mx-syncexpr') {
+                        } else if (a.name == 'mx-bindto' ||
+                            a.name == 'mx-bindfrom' ||
+                            a.name == 'mx-syncto' ||
+                            a.name == 'mx-syncfrom') {
+                            token.customHost = true;
+                        } else if (a.name == 'mx-syncexpr') {
                             token.customBindExpr = true;
-                        } else if (a.name == 'mx-syncto') {
-                            token.customBindTo = true;
+                        } else if (a.name == 'mx-forexpr') {
+                            token.customBindForExpr = true;
                         } else if (a.name == 'mx-owner') {
                             token.hasMxOwner = true;
                         } else if (a.name == 'mx-host' ||
@@ -807,12 +826,17 @@ let parser = (tmpl, e) => {
                         };
                         a.cond = composer;
                         if (a.name == 'x-html' ||
-                            a.name == 'inner-html') {
+                            a.name == 'inner-html' ||
+                            a.name == 'mx-html' ||
+                            a.name == mxPrefix + '-html') {
                             token.hasXHTML = true;
                             token.cond = composer;
                             ignoreAttr = true;
+                        } else if (a.name == 'mx-key' ||
+                            a.name == mxPrefix + '-key') {
+                            ignoreAttr = true;
+                            token.mxKeyAttr = a;
                         }
-                        //console.log(a.name, a.value, refCond, cmds);
                     } else if (!a.unary) {
                         tmplCommandAnchorReg.lastIndex = 0;
                         if (tmplCommandAnchorReg.test(a.name)) {
@@ -838,12 +862,15 @@ let parser = (tmpl, e) => {
                             token.hasMxOwner = true;
                         } else if (a.name == 'mx-bindexpr') {
                             token.customBindExpr = true;
-                        } else if (a.name == 'mx-bindto') {
-                            token.customBindTo = true;
+                        } else if (a.name == 'mx-bindto' ||
+                            a.name == 'mx-bindfrom' ||
+                            a.name == 'mx-syncfrom' ||
+                            a.name == 'mx-syncto') {
+                            token.customHost = true;
                         } else if (a.name == 'mx-syncexpr') {
                             token.customBindExpr = true;
-                        } else if (a.name == 'mx-syncto') {
-                            token.customBindTo = true;
+                        } else if (a.name == 'mx-forexpr') {
+                            token.customBindForExpr = true;
                         } else if (a.name == 'mx-host' ||
                             a.name == mxPrefix + 'host') {
                             token.bindHost = true;
@@ -859,6 +886,13 @@ let parser = (tmpl, e) => {
                         } else if (a.name == 'mx-ref' ||
                             a.name == mxPrefix + '-ref') {
                             token.isRef = true;
+                        } else if (a.name == tmplMxViewParamKey) {
+                            ignoreAttr = true;
+                            token.mxViewParamValue = a;
+                        } else if (a.name == 'mx-key' ||
+                            a.name == mxPrefix + '-key') {
+                            ignoreAttr = true;
+                            token.mxKeyAttr = a;
                         }
                     }
                     if (!ignoreAttr) {
@@ -910,7 +944,7 @@ let parser = (tmpl, e) => {
                 token.syncFromUI ||
                 token.needHost) && (
                     !token.bindHost &&
-                    !token.customBindTo
+                    !token.customHost
                 )) {
                 token.attrHasDynamicViewId = true;
                 aList.unshift({
@@ -918,6 +952,17 @@ let parser = (tmpl, e) => {
                     value: '\x1f',
                     unary: false
                 });
+            }
+            if (token.mxKeyAttr) {
+                aList.unshift(token.mxKeyAttr);
+            }
+            if (token.mxViewParamValue) {
+                aList.unshift(token.mxViewParamValue);
+            }
+            if (configs.tmplSupportSlotFn &&
+                token.needHost &&
+                !token.customHost) {
+                checkInFunctionSlot(token, map, tmpl.slice(start, end), e.shortHTMLFile);
             }
             //console.log(token, aList);
             token.attrs = aList;
@@ -939,6 +984,22 @@ let parser = (tmpl, e) => {
                 groupDeclared.push(token);
             } else if (token.groupUseNode) {
                 groupUsed.push(token);
+            }
+            if (token.isMxView) {
+                let start = token;
+                do {
+                    start = map[start.pId];
+                    if (start &&
+                        start.isMxView &&
+                        !start.addedMxSub) {
+                        start.addedMxSub = true;
+                        start.attrs.unshift({
+                            name: 'mx-sub',
+                            unary: true,
+                            value: true
+                        });
+                    }
+                } while (start);
             }
         },
         end(tag, { start, end }) {
@@ -1246,7 +1307,7 @@ let preProcess = (src, e) => {
                             expr.value = utils.uId('$q_v_', '', 1);
                         }
                         if (expr.bad || expr.splitter != 'as') {
-                            console.log(chalk.red(`[MXC-Error(tmpl-quick)] unsupport or bad ${k} {{${li.art}}} at line:${li.line}`), 'file', chalk.grey(e.shortHTMLFile));
+                            console.log(chalk.red(`[MXC-Error(tmpl-quick)] unsupport or bad ${k} {{${li.art}}} at line:${li.line}`), 'file', chalk.gray(e.shortHTMLFile));
                             throw new Error(`[MXC-Error(tmpl-quick)] unsupport or bad ${k} {{${li.art}}} at ${e.shortHTMLFile}`);
                         }
                         if (!expr.index) {
@@ -1385,7 +1446,6 @@ let process = (src, e) => {
         staticCounter = 0,
         inlineStaticHTML = Object.create(null),
         staticUniqueKey = e.shortHTMLUId,
-        mxKeyCounter = 0,
         declaredRemoved = [],
         rebuildDeclared = [],
         rootCanHoisting = true;
@@ -1461,7 +1521,11 @@ let process = (src, e) => {
                 if (!text.trimmedPrefix) {
                     vnodeDeclares.$text = 1;
                 }
-                snippets.push(text.returned + ';');
+                let str = text.returned.trimEnd();
+                if (!str.endsWith(';')) {
+                    str += ';';
+                }
+                snippets.push(str);
             }
         } else {
             let attrs = {},
@@ -1492,16 +1556,23 @@ let process = (src, e) => {
                         continue;
                     }
                     if (a.name == 'mx-host' &&
-                        node.customBindTo) {
+                        node.customHost) {
+                        continue;
+                    }
+                    if (a.name == 'mx-expr' &&
+                        node.customBindForExpr) {
                         continue;
                     }
                     hasAttrs = true;
                     if (a.name == 'mx-bindexpr' ||
                         a.name == 'mx-syncexpr') {
                         a.name = 'mx-ctrl';
-                    }
-                    if (a.name == 'mx-bindto' ||
-                        a.name == 'mx-syncto') {
+                    } else if (a.name == 'mx-forexpr') {
+                        a.name = 'mx-expr';
+                    } else if (a.name == 'mx-bindto' ||
+                        a.name == 'mx-syncto' ||
+                        a.name == 'mx-syncfrom' ||
+                        a.name == 'mx-bindfrom') {
                         a.name = 'mx-host';
                     }
                     //console.log(groupKeyAsParams);
@@ -1514,8 +1585,8 @@ let process = (src, e) => {
                             for (let k of keys) {
                                 k = k.trim();
                                 if (k == 'this') {
-                                    newKeys.push('#');
                                     newKeys.length = 0;
+                                    newKeys.push('#');
                                     break;
                                 } else {
                                     newKeys.push(k);
@@ -1557,7 +1628,11 @@ let process = (src, e) => {
                             }
                         }
                         if (newKeys.length) {
-                            a.value = newKeys.join(',');
+                            if (newKeys.includes('#')) {
+                                a.value = '#';
+                            } else {
+                                a.value = newKeys.join(',');
+                            }
                         } else {
                             continue;
                         }
@@ -1602,12 +1677,14 @@ let process = (src, e) => {
                     if (attrKeys[a.name] === 1 &&
                         e.checker.tmplDuplicateAttr) {
                         let v = a.unary ? '' : `="${a.cond ? a.cond.value : a.value}"`;
-                        console.log(chalk.red('[MXC Tip(tmpl-quick)] duplicate attr:' + a.name), 'near:', chalk.magenta(node.tag + '->' + a.name + v), 'at file:', chalk.grey(e.shortHTMLFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-quick)] duplicate attr:' + a.name), 'near:', chalk.magenta(node.tag + '->' + a.name + v), 'at file:', chalk.gray(e.shortHTMLFile));
                         continue;
                     }
                     if (a.name == 'mx5-key') {
                         a.name = '#';
-                        a.value = `${staticUniqueKey} ${md5(mxKeyCounter++, 'mxKeys', '', true)} ${a.value}`;
+                        if (configs.tmplSupportSlot) {
+                            a.value = `${staticUniqueKey} ${a.value}`;
+                        }
                     }
                     attrKeys[a.name] = 1;
                     let bProps = attrMap.getBooleanProps(node.tag, node.inputType);
@@ -1862,11 +1939,10 @@ let process = (src, e) => {
             }
             snippets.push(`${start.join('')}`);
             if (node.groupKeyNode) {
-                specialStaticVars['$slots'] = '{}';
 
                 if (node.groupContextNode) {
                     if (!configs.tmplSupportSlotFn) {
-                        console.log(chalk.red('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute'), 'at file:', chalk.grey(e.shortHTMLFile));
+                        console.log(chalk.red('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute'), 'at file:', chalk.gray(e.shortHTMLFile));
                         throw new Error('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute at file:' + e.shortHTMLFile);
                     }
                     let newKey = quickGroupFnPrefix + node.groupKey;// //`${quickGroupFnPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
@@ -1938,14 +2014,15 @@ let process = (src, e) => {
                 key += node.groupUse;//`$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node`;
                 let refVar = key;
                 if (node.canHoisting) {
-                    let skey = `$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node`;
-                    if (!staticNodes[skey]) {
-                        staticNodes[skey] = skey;
-                        staticVars.push({
-                            key: skey
-                        });
-                    }
-                    snippets.push(`if(${skey}){\n${levelPrefix}.push(...${skey});\n}else{\n`);
+                    // let skey = `$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node`;
+                    // if (!staticNodes[skey]) {
+                    //     staticNodes[skey] = skey;
+                    //     staticVars.push({
+                    //         key: skey
+                    //     });
+                    // }
+                    //console.log('enter', levelPrefix, skey);
+                    //snippets.push(`if(${skey}){\n${levelPrefix}.push(...${skey});\n}else{\n`);
                 }
                 if (node.groupContextNode) {
                     //key += '($id';
@@ -2176,7 +2253,7 @@ let process = (src, e) => {
                         }
                         snippets.push(`}\n`);
                         if (node.canHoisting) {
-                            snippets.push('}\n');
+                            // snippets.push('}\n');
                         }
                         if (vnodeInited[level]) {
                             if (!usedParentVars[`d${level}`]) {
@@ -2206,7 +2283,9 @@ let process = (src, e) => {
                         snippets.push(src);
                     }
                 }
-                if ((node.canHoisting && !node.groupUseNode && !node.groupKeyNode) ||
+                if ((node.canHoisting &&
+                    !node.groupUseNode &&
+                    !node.groupKeyNode) ||
                     node.inlineStaticValue) {
                     snippets.push('\r\n}\n');
                 }
@@ -2280,6 +2359,7 @@ let process = (src, e) => {
     //console.log(innerCode);
     //let hasGroupFunction = e.globalGroupKeys.length > 0;
     //let hasGroupFunction = passedGroupRootRefs.length > 0;
+
     if (e.globalVars.length) {
         let vars = ',\r\n{',
             out;
@@ -2353,22 +2433,35 @@ let process = (src, e) => {
             source = source.replace(v.key, regexp.encode(i));
         }
     }
-    for (let s in specialStaticVars) {
-        staticVars.push({
-            key: s,
-            value: specialStaticVars[s]
-        });
-    }
     // for (let slot in groupDeclaredMap) {
     //     let slotReg = regexp.get(regexp.escape(`$slots.${slot}`), 'g');
     //     console.log(slotReg);
     //     source = source.replace(slotReg, _ => `$slots.${md5(_, e.shortHTMLFile + '@slots', '', false)}`);
     //     console.log(source);
     // }
-    if (!configs.debug &&
-        configs.tmplSupportSlot) {
+    if (configs.tmplSupportSlot) {
+        //if (configs.debug) {
+        // let t=0;
         source = source.replace(slotReg, (_, v) => {
-            return `$slots.${md5(v, e.shortHTMLFile + '@slots', '', false)}`;
+            //specialStaticVars['$slots'] = '{}';
+            //console.log(_, v);
+            //return `$slots.a${t++}`;
+            //return _;
+            specialStaticVars[`$host_slots_${v}`] = '';
+            return `$host_slots_${v}`;
+        });
+        // } else {
+        //     source = source.replace(slotReg, (_, v) => {
+        //         //specialStaticVars['$slots'] = '{}';
+        //         return `$slots.${md5(v, e.shortHTMLFile + '@slots', '', false)}`;
+        //     });
+        // }
+    }
+    //console.log(specialStaticVars);
+    for (let s in specialStaticVars) {
+        staticVars.push({
+            key: s,
+            value: specialStaticVars[s]
         });
     }
     // if (hasGroupFunction) {

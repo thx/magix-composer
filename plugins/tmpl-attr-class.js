@@ -2,7 +2,7 @@
     处理class名称，前面我们把css文件处理完后，再自动处理掉模板文件中的class属性中的名称，不需要开发者界入处理
  */
 let path = require('path');
-let chalk = require('chalk');
+let chalk = require('ansis');
 let cssChecker = require('./checker-css');
 let classRef = require('./tmpl-attr-classref');
 let cssTransform = require('./css-transform');
@@ -29,7 +29,7 @@ module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
         singleClassName;
     let checkDuplicate = key => {
         if (singleClassTemp[key] == 1) {
-            console.log(chalk.red('[MXC Tip(tmpl-attr-class)] duplicate class value:' + key), 'near:', chalk.magenta(toSrc(singleClassName)), 'at file:', chalk.grey(e.shortHTMLFile));
+            console.log(chalk.red('[MXC Tip(tmpl-attr-class)] duplicate class value:' + key), 'near:', chalk.magenta(toSrc(singleClassName)), 'at file:', chalk.gray(e.shortHTMLFile));
         }
         singleClassTemp[key] = 1;
     };

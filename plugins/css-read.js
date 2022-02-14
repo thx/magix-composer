@@ -5,7 +5,7 @@ let fs = require('fs');
 let path = require('path');
 
 let less = require('less');
-let chalk = require('chalk');
+let chalk = require('ansis');
 
 let utils = require('./util');
 let configs = require('./util-config');
@@ -47,7 +47,7 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
             }
             sass.render(cssCompileConfigs, (err, result) => {
                 if (err) {
-                    console.log(chalk.red('[MXC Error(css-read)]'), 'compile sass error:', chalk.red(err + ''), 'at', chalk.grey(e.shortFile));
+                    console.log(chalk.red('[MXC Error(css-read)]'), 'compile sass error:', chalk.red(err + ''), 'at', chalk.gray(e.shortFile));
                     return reject(err);
                 }
                 let map = sourceMap(result.map ? result.map.toString() : '', e.file, {
@@ -75,7 +75,7 @@ let compileContent = (file, content, ext, resolve, reject, shortFile) => {
             }
             less.render(e.content, cssCompileConfigs, (err, result) => {
                 if (err) {
-                    console.log(chalk.red('[MXC Error(css-read)]'), 'compile less error:', chalk.red(err + ''), 'at', chalk.grey(e.shortFile));
+                    console.log(chalk.red('[MXC Error(css-read)]'), 'compile less error:', chalk.red(err + ''), 'at', chalk.gray(e.shortFile));
                     return reject(err);
                 }
                 let map = sourceMap(configs.debug && configs.sourceMapCss ? result.map : '', e.file);
@@ -128,7 +128,7 @@ module.exports = (file, e, source, ext, refInnerStyle) => {
                 }).catch((...args) => {
                     let e = args[0];
                     if (e && e.name == 'CssSyntaxError') {
-                        console.log(chalk.red('[MXC Error(css-read)]'), 'autoprefixer error:', chalk.red(e.reason), 'at', chalk.grey(shortFile), 'at line', chalk.magenta(e.line));
+                        console.log(chalk.red('[MXC Error(css-read)]'), 'autoprefixer error:', chalk.red(e.reason), 'at', chalk.gray(shortFile), 'at line', chalk.magenta(e.line));
                     }
                     reject(args);
                 });

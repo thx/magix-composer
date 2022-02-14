@@ -251,7 +251,8 @@ module.exports = {
                 e.type == 'UnaryExpression' ||
                 e.type == 'ThisExpression' ||
                 e.type == 'NewExpression' ||
-                e.type == 'UpdateExpression') {
+                e.type == 'UpdateExpression' ||
+                e.type == 'TemplateLiteral') {
                 let oValue = str.substring(e.start, e.end);
                 modifiers.push({
                     start: e.start,

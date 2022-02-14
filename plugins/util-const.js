@@ -6,6 +6,12 @@ let hasCmdReg = /\x07\d+\x07/;
 let spaceReg = /[ \n\f\r]+/;
 let cspace = /\s+/g;
 let mxPrefix = 'mx5';
+let getRandomString = () => {
+    if (crypto.randomInt) {
+        crypto.randomInt(2 ** 47).toString(16);
+    }
+    return Math.random().toString(16).slice(2);
+};
 let reserveKeys = {
     'view': 1,//mx-view属性，用于渲染其它区块
     'vframe': 1,//mx-vframe属性，保留
@@ -26,13 +32,21 @@ let reserveKeys = {
     'slot': 1,//mx-slot 指示当前view来源于其它view中
     'by': 1,//mx-by 保留
     'bindto': 1,//mx-bindto 从界面同步数据到js时，指示同步到哪个view上
+    'bindfrom': 1,
     'bindexpr': 1,//mx-bindexpr 同步数据表达式
+    'for': 1,//mx-for保留
     'expr': 1,//mx-expr 保留
     'role': 1,//mx-role保留，指定是什么组件
     'host': 1,//mx-host 指示绑定到哪个view上
     'syncexpr': 1,//mx-syncexpr 同步数据表达式
     'syncto': 1,//mx-syncto 从界面同步数据到js时，指示同步到哪个view上
+    'syncfrom': 1,
     'reset': 1,//还原属性
+    'sub': 1,
+    'child': 1,
+    'children': 1,
+    'parent': 1,
+    'forexpr': 1,
     'processor': 1//mx-processor 保留
 };
 let innerKeys = Object.keys(reserveKeys).join('\\b|');
@@ -44,7 +58,7 @@ module.exports = {
     microTmplCommand: /<%[\s\S]*?%>/g,
     revisableReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/,
     revisableGReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/g,
-    revisableTail: '$' + crypto.randomInt(2 ** 47).toString(16),
+    revisableTail: '$' + getRandomString(),
     selfCssRefReg: /@:(@keyframes|@font-face)?\(\.?([\w\-_:]+)\)/g,
     galleryFileNames: ['_config', 'config', 'cfg', '_cfg'],
     galleryFileSuffixes: ['mjs', 'js'],

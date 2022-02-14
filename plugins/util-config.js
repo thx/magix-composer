@@ -38,6 +38,7 @@ module.exports = {
     tmplQuickWithTryCatch: false,//是否生成quick模板时带try catch
     tmplSupportSlot: true,
     tmplSupportSlotFn: true,
+    tmplBindExprSpliter: ':',
     selectorSilentErrorCss: true,//css选择器处理失败时，使用原有的选择器还是提示用户出错
     sourceMapCss: false,
     importCssSyntax: false,

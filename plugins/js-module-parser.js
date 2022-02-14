@@ -1,12 +1,12 @@
 let acorn = require('./js-acorn');
-let chalk = require('chalk');
+let chalk = require('ansis');
 module.exports = {
     process(tmpl, sourceFile) {
         let ast;
         try {
             ast = acorn.parse(tmpl, null, sourceFile);
         } catch (ex) {
-            console.log(chalk.red(`[MXC Error(js-module-parser)]`), ex.message, '\nnear', tmpl.substring(Math.max(0, ex.pos - 20), Math.min(ex.pos + 20, tmpl.length)), 'at', chalk.grey(sourceFile));
+            console.log(chalk.red(`[MXC Error(js-module-parser)]`), ex.message, '\nnear', tmpl.substring(Math.max(0, ex.pos - 20), Math.min(ex.pos + 20, tmpl.length)), 'at', chalk.gray(sourceFile));
             throw ex;
         }
         let modules = [];

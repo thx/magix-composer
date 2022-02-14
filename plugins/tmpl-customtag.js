@@ -5,7 +5,7 @@ let fs = require('fs');
 let path = require('path');
 let configs = require('./util-config');
 let tmplCmd = require('./tmpl-cmd');
-let chalk = require('chalk');
+let chalk = require('ansis');
 let utils = require('./util');
 let tmplParser = require('./tmpl-parser');
 let customConfig = require('./tmpl-customtag-cfg');
@@ -59,7 +59,7 @@ let inputTypeReg = /\s+\btype\s*=\s*(['"])([\s\S]+?)\1/;
 let attrAtStartContentHolderReg = /\x03/g;
 let mxViewAttrHolderReg = /\x02/g;
 let atReg = /@/g;
-let mxViewAttrReg = /\s+\bmx-view\s*=\s*(['"])([^'"]*?)\1/;
+let mxViewAttrReg = /\s+(\x1c\d+\x1c)?\bmx-view\s*=\s*(['"])([^'"]*?)\2/;
 let valuableAttrReg = /\x07\d+\x07\s*\?\?\s*/;
 let booleanAttrReg = /\x07\d+\x07\s*\?\s*/;
 //let wholeCmdReg = /^\s*\x07\d+\x07\s*$/;
@@ -113,7 +113,7 @@ let innerView = (result, info, gRoot, extInfo, actions, e) => {
         if (!rPath.startsWith('.')) {
             rPath = './' + rPath;
         }
-        result.mxView = rPath;
+        result.mxView = utils.normalizePathSeperator(rPath);
     }
     //console.log('xx', result.mxView,info,result.tag);
     if (utils.isObject(info) &&
@@ -270,7 +270,7 @@ let innerGroup = (result) => {
     result.attrs.replace(attrNameValueReg, (m, prefix, key, q, value) => {
         if (key == 'use' ||
             key == 'name') {
-            value = '__' + (configs.debug ? 'mx-slots-' + value : md5(value, 'tmpl-of-slots'));
+            value = '__' + (configs.debug ? 'mx-slots-of-' + value : md5(value, 'tmpl-of-slots'));
             let attrName = key == 'use' ? tmplGroupUseAttr : tmplGroupKeyAttr;
             newAttrs += ` ${attrName}="${value}"`;
         } else {
@@ -705,9 +705,10 @@ module.exports = {
             let tag = result.tag;
             let attrs = result.attrs;
             //console.log(attrs);
-            attrs = attrs.replace(mxViewAttrReg, (m, q, c) => {
-                //console.log(m, q, c);
+            attrs = attrs.replace(mxViewAttrReg, (m, cond, q, c) => {
+                //console.log(m,'--', q,'==', c);
                 let [pathname, searchParams = ''] = c.split('?');
+                //console.log(cond, JSON.stringify(m));
                 //console.log(pathname,searchParams,c);
                 pathname = pathname || '';
                 pathname = addAtIfNeed(pathname);
@@ -735,7 +736,9 @@ module.exports = {
                     view += `?${params.toString()}`;
                 }
                 //console.log(view);
-                return ` \x02="${view}"`;
+                //支持<mx-vframe src="{{=data}}?./detail" *data="{{#data}}"/>
+                //条件src
+                return ` ${cond ?? ''}\x02="${view}"`;
             });
             let html = `<${tag} ${attrs}`;
             //result.content=qblance.setNestLinkId(result.content);
