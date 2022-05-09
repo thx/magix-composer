@@ -738,7 +738,7 @@ module.exports = {
                 //console.log(view);
                 //支持<mx-vframe src="{{=data}}?./detail" *data="{{#data}}"/>
                 //条件src
-                return ` ${cond ?? ''}\x02="${view}"`;
+                return ` ${cond != null ? cond : ''}\x02="${view}"`;
             });
             let html = `<${tag} ${attrs}`;
             //result.content=qblance.setNestLinkId(result.content);

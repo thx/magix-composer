@@ -21,7 +21,8 @@ let regexp = require('./util-rcache');
 let tmplChecker = require('./checker-tmpl');
 let cmdReg = /\x07\d+\x07/g;
 let dOutCmdReg = /<%=([\s\S]+?)%>/g;
-let fillReg = /\$\{[^{}]+\}/gi;
+let fillReg = /(?::[^/:\s]+|\$\{[^}]+\})/gi;
+let encodeFalseReg = /\smx5?-encode\s*=\s*(['"])false\1/i;
 
 let viewIdAnchorReg = /%1f/gi;
 //let gorupRef = '@group:';
@@ -36,20 +37,23 @@ module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
     let paramCount = 0;
     let addParamCount = 0;
     let padAndBefore = false;
+    let ignoreEncode = encodeFalseReg.test(match);
     let updateCmdUseEncode = src => {
-        src.replace(cmdReg, cm => {
-            let cmd = refTmplCommands[cm];
-            if (cmd) {
-                cmd = cmd.replace(dOutCmdReg, (m, c) => {
-                    if (c.startsWith('$encodeUrl(') &&
-                        c.endsWith(')')) {
-                        return m;
-                    }
-                    return '<%=$encodeUrl(' + c + ')%>';
-                });
-                refTmplCommands[cm] = cmd;
-            }
-        });
+        if (!ignoreEncode) {
+            src.replace(cmdReg, cm => {
+                let cmd = refTmplCommands[cm];
+                if (cmd) {
+                    cmd = cmd.replace(dOutCmdReg, (m, c) => {
+                        if (c.startsWith('$encodeUrl(') &&
+                            c.endsWith(')')) {
+                            return m;
+                        }
+                        return '<%=$encodeUrl(' + c + ')%>';
+                    });
+                    refTmplCommands[cm] = cmd;
+                }
+            });
+        }
     };
     match.replace(baseAttrReg, (m, q, content) => {
         if (content.includes('?')) {
@@ -124,6 +128,7 @@ module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
             nextPrefix = padAndBefore ? '&' : '';
         } else {
             attrs.push(nextPrefix, name, '=', content); //处理成最终的a=b形式
+            attrsMap[':' + name] = content;
             attrsMap['${' + name + '}'] = content;
             hasAddParams = true;
             addParamCount++;
@@ -135,25 +140,30 @@ module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
     //console.log(attrs);
     if (attrs.length) {
         match = match.replace(baseAttrReg, (m, q, content) => {
-            let hasFill = false;
+            let usedParams = {};
             /**
              * 支持
-             * <a href="//domain/to/${value}" *value="{{=ff}}">xx</a>
+             * <a href="//domain/to/:value" *value="{{=ff}}">xx</a>
              * 的形式
              */
             content = content.replace(fillReg, m => {
                 //m = decodeURIComponent(m);
                 let holder = attrsMap[m];
                 if (holder) {
-                    hasFill = true;
+                    usedParams[m] = 1;
                     updateCmdUseEncode(holder);
                     return holder;
                 }
                 return m;
             });
             //console.log(content);
-            if (!hasFill) {
-                attrs = attrs.join('');
+            attrs = attrs.join('');
+            for (let p in usedParams) {
+                let reg1 = regexp.get('^' + p.slice(1) + '=[^=&]+(?:&|$)', 'g');
+                let reg2 = regexp.get('&' + p.slice(1) + '=[^=&]+(?=&|$)', 'g');
+                attrs = attrs.replace(reg1, '').replace(reg2, '');
+            }
+            if (attrs) {
                 if (content.includes('?')) {
                     content = content + attrs;
                 } else {
@@ -167,7 +177,7 @@ module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
         //console.log(match);
     }
     let testCmd = (m, q, content) => {
-        q = content.indexOf('?');
+        q = content.lastIndexOf('?');
         if (q >= 0) {
             updateCmdUseEncode(content.substring(q + 1));
         }

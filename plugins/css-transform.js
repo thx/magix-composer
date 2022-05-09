@@ -561,6 +561,8 @@ let cssContentProcessor = (css, ctx) => {
         }
     */
     let pInfo = cssParser(css, ctx.shortFile, ctx.refAtRules);
+    let header = ctx.header || {};
+    let used = header.used || {};
     //console.log(pInfo);
     if (pInfo.nests.length) { //标记过于复杂的样式规则
         cssChecker.storeStyleComplex(ctx.file, pInfo.nests);
@@ -574,7 +576,8 @@ let cssContentProcessor = (css, ctx) => {
     for (let token of tokens) {
         let id = token.name;
         if (token.type == 'tag') {
-            if (!ignoreTags[id]) { //标签或属性选择器
+            if (!ignoreTags[id] &&
+                !used[id]) { //标签或属性选择器
                 tagsOrAttrs[id] = 1;
             }
         } else if (token.type == 'attr') {
@@ -606,7 +609,8 @@ let cssContentProcessor = (css, ctx) => {
             //if (token.first) {
             id = '[' + id + ']';
             //}
-            if (!ignoreTags[id]) { //标签或属性选择器
+            if (!ignoreTags[id] &&
+                !used[id]) { //标签或属性选择器
                 tagsOrAttrs[id] = 1;
             }
         } else if (token.type == 'class') {
@@ -628,7 +632,9 @@ let cssContentProcessor = (css, ctx) => {
                 end: token.end,
                 content: result
             });
-            selectors[id] = result;
+            if (!used['.' + id]) {
+                selectors[id] = result;
+            }
         } else if (token.type == 'global') {
             modifiers.push({
                 start: token.start,
@@ -681,6 +687,7 @@ let cssContentProcessor = (css, ctx) => {
         css = css.substring(0, m.start) + m.content + css.substring(m.end);
     }
     css = cssAtRuleProcessor(css, ctx.namesKey, ctx.file, atRules);
+
     return {
         content: css,
         tagsOrAttrs,

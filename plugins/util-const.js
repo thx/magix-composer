@@ -47,6 +47,7 @@ let reserveKeys = {
     'children': 1,
     'parent': 1,
     'forexpr': 1,
+    'encode': 1,
     'processor': 1//mx-processor 保留
 };
 let innerKeys = Object.keys(reserveKeys).join('\\b|');

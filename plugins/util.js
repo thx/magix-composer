@@ -85,7 +85,11 @@ let cloneAssign = (dest, src) => {
 let uId = (fix, str, withoutSuffix) => {
     let id;
     do {
-        id = crypto.randomInt(2 ** 47).toString(16);
+        if (crypto.randomInt) {
+            id = crypto.randomInt(2 ** 47).toString(16);
+        } else {
+            id = Math.random().toString(16).slice(2);
+        }
     } while (~str.indexOf(id));
     return (fix || '') + id + (withoutSuffix ? '' : (fix || ''));
 };

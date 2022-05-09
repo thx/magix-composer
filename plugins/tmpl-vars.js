@@ -47,7 +47,7 @@ let vphGlb = String.fromCharCode(0x5168); //全
 let vphAsg = String.fromCharCode(0x8d4b);
 let creg = /[\u7528\u58f0\u56fa\u5168\u8d4b]/g;
 let hreg = /([\x01\x02\x10])\d+/g;
-let supportAnalyseExprReg = /^[a-zA-Z0-9\.\-$\x01\x06\x03\x17\[\]_\'"\\]+$/;
+let supportAnalyseExprReg = /^[a-zA-Z0-9\.\-$\x01\x06\x03\x17\[\]_\'"\\\?]+$/;
 let stringReg = /^['"]/;
 let numIndexReg = /^\[(\d+)\]$/;
 let tailEmptyReg = /\+''$/;
@@ -990,7 +990,15 @@ module.exports = {
             let pos = match[1];
             pos = pos | 0;
             let key = head.replace(/\x01\d+/, '\x01'); //获取这个变量对应的赋值信息
-            return getParentRefKey(key, pos);
+            let safe = key.endsWith('?');
+            if (safe) {
+                key = key.slice(0, -1);
+            }
+            let i = getParentRefKey(key, pos);
+            if (safe) {
+                i.value += '?';
+            }
+            return i;
         };
         let find = (expr, srcExpr, prefix) => {
             if (!srcExpr) {
@@ -1016,6 +1024,7 @@ module.exports = {
                 return ps.slice(1);
             }
             let info = best(head);
+            //console.log('-----', info);
             if (info) {
                 info = info.value; //根据第一个变量查找最优的对应的根变量，第2种情况
             }
@@ -1054,7 +1063,7 @@ module.exports = {
                     if (one.charAt(0) == '[' &&
                         one.charAt(one.length - 1) == ']') {
                         takeParts();
-                        one = `'+(${one.slice(1, -1)})+'`;
+                        one = `['+(${one.slice(1, -1)})+']`;
                         rebuild.push(one);
                     } else if (one == '\x00') {
                         temp.push(`'+${expr}+'`);
@@ -1074,7 +1083,7 @@ module.exports = {
                     one = result[i].replace(numIndexReg, '$1');
                     if (one.charAt(0) == '[' &&
                         one.charAt(one.length - 1) == ']') {
-                        one = '<%=' + one.slice(1, -1) + '%>';
+                        one = '[<%=' + one.slice(1, -1) + '%>]';
                         vars.push(one);
                     }
                     result[i] = one;
@@ -1482,6 +1491,7 @@ module.exports = {
                 }
                 // if (!configs.tmplSupportSlotFn) {
                 let ref = transformAtOrRefExpr(cmd, pfx, m);
+                //console.log(ref)
                 if (isAnalysePath) {
                     syncFromUI = true;
                     return `<%=${ref.key}%>`;
@@ -1494,6 +1504,7 @@ module.exports = {
                 // }
                 return m;
             });
+            //console.log(findCount,mxExprInfo);
             if (findCount > 0) {
                 syncFromUI = true;
                 attrs = ' mx-expr="' + mxExprInfo.join(configs.tmplBindExprSpliter) + '" mx-ctrl="[' + mxRefExprInfo.join(',') + ']" ' + attrs;

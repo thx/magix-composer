@@ -43,7 +43,7 @@
 1. 目前内置支持`css,less,mx,style`
 2. 为了使用方便，这些文件根据后缀使用相应的处理器被自动处理
 3. `@:file.css`,`ref@:file.css`,`compiled@:file.css`
-4. `css`中保持选择器不被变换：`:global(.selector){}`或`@global{.selector{}}`
+4. `css`中保持选择器不被变换：`:global(.selector){}`或`.cond::global(.selector)`或`@global{.selector{}}`
 
 ### 其它
 
@@ -84,6 +84,15 @@
 
 ```html
 <mx-link *user-id="{{=a}}"></mx-link>
+```
+
+禁止自动参数编码
+```html
+<mx-link *user-id="{{=a}}" mx-encode="false"></mx-link>
+```
+追加到`url`中，支持:expr和${expr}两种语法
+```html
+<mx-link to="path/to/:target/${type}.html" *target="{{=target}}" *type="{{=type}}"></mx-link>
 ```
 
 布尔条件判断输出属性
@@ -185,8 +194,15 @@ module.exports={
 ## mx-syncto mx-bindexpr
 syncto指定数据同步到哪个view上,bindexpr指定绑定表达式
 
+mx-syncfrom mx-bindfrom 从哪个view同步或绑定
+<input mx-bindfrom="{{=viewId}}" />
 
 <input mx-syncto="{{=a}}" mx-bindexpr="[user.name]"/>
+修改动态生成的mx5-expr
+<input mx-forexpr="{{~expr.path}}" />
+
+多绑定，忽略mx-bind，开发时更符合html属性规范
+<input mx-bind="{{:user?.name}}" mx-bind="{{:current.name}}"/>
 
 
 ## mx-source及 mx-source-whole
@@ -219,4 +235,20 @@ syncto指定数据同步到哪个view上,bindexpr指定绑定表达式
     <span>{{=a}}
     {{/each}}
 </mx-source-whole>
+```
+
+### mx-html及mx-safe-html
+<div mx-html="{{=html}}"></div>
+<div mx-safe-html="{{=html}}"></div> 需提供$sanitize方法
+<div mx-html="{{=html}}?"></div> 不支持boolean判断
+
+
+## 内置模块或路径转换
+> 在ts代码中书写
+
+```ts
+'@:{moduleId}'//当前模块id
+'@:../name/to'//相对转绝对
+'@:~/path/to'//~是为开发者保留的需要自己逻辑的占位符，需要实现resolveVirtual方法
+'@:*/path/to'//*表示根项目名称
 ```

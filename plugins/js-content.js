@@ -25,7 +25,7 @@ let {
     atViewPrefix,
     revisableTail,
     selfCssRefReg } = require('./util-const');
-let deps = require('./util-deps');
+//let deps = require('./util-deps');
 //let httpProtocolReg = /^['"`]https?:/i;
 
 let lineBreakReg = /\r\n?|\n|\u2028|\u2029/;
@@ -315,6 +315,13 @@ let processContent = (from, to, content, inwatch) => {
                             node.raw = dest;
                             add = true;
                         }
+                    } else if (rest.startsWith('*/')) {
+                        let full = `"${utils.extractModuleId(rest.substring(2))}"`;
+                        if (tl) {
+                            full = full.slice(1, -1);
+                        }
+                        node.raw = full;
+                        add = true;
                     }
                 }
             }

@@ -26,6 +26,8 @@ let atRuleSearchContent = {
 let atRuleIgnoreContent = {
     page: 1,
     global: 1,
+    'color-profile': 1,
+    'scroll-timeline': 1,
     '-webkit-keyframes': 1,
     '-moz-keyframes': 1,
     '-ms-keyframes': 1,
@@ -127,25 +129,26 @@ let parse = (css, file, refAtRules) => {
         //let ec = current;
         //console.log('ignore at rule expr', css.substring(sc, ec));
     };
-    let skipAtRuleContent = () => {
+    let findClosed = () => {
         let count = 0;
-        //let sc = current;
-        current = css.indexOf('{', current);
-        while (current >= 0 && current < max) {
-            let tc = css.charAt(current);
+        let sc = css.indexOf('{', current);
+        while (sc >= 0 && sc < max) {
+            let tc = css.charAt(sc);
             if (tc == '{') {
                 count++;
             } else if (tc == '}') {
                 count--;
                 if (!count) {
-                    current++;
+                    sc++;
                     break;
                 }
             }
-            current++;
+            sc++;
         }
-        //let ec = current;
-        //console.log('ignore content', css.substring(sc, ec));
+        return sc;
+    };
+    let skipAtRuleContent = () => {
+        current = findClosed();
     };
     // let overSelectors = 0,
     //     selectorStart = 0;
@@ -324,7 +327,23 @@ let parse = (css, file, refAtRules) => {
             } else if (tc === ':') {
                 if (css.charAt(current + 1) === ':') {
                     current += 2;
-                    getNameAndGo();
+                    let begin = current;
+                    let id = getNameAndGo();
+                    if (css.charAt(current) === '(') {
+                        let ti = css.indexOf(')', current);
+                        if (ti > -1) {
+                            current = ti + 1;
+                            if (id == 'global') {
+                                let range = css.substring(begin - 2, current);
+                                tokens.push({
+                                    type: 'global',
+                                    start: begin - 2,
+                                    content: range.slice(9, -1),
+                                    end: current
+                                });
+                            }
+                        }
+                    }
                     continue;
                 }
                 current++;
@@ -388,6 +407,7 @@ let parse = (css, file, refAtRules) => {
             }
         }
     };
+    //console.log(file,css);
     while (current < max) {
         stripWhitespaceAndGo(0);
         c = css.charAt(current);
@@ -395,6 +415,7 @@ let parse = (css, file, refAtRules) => {
             let start = current;
             current++;
             let name = getNameAndGo();
+            //console.log('-----',name,file);
             if (name == 'property') {
                 stripWhitespaceAndGo(0);
                 let start = current;
@@ -410,6 +431,7 @@ let parse = (css, file, refAtRules) => {
                 processRules();
             } else if (atRuleIgnoreContent.hasOwnProperty(name)) {
                 //let start = current;
+                //console.log('@@@',name);
                 if (name == 'keyframes' ||
                     name == '-webkit-keyframes' ||
                     name == '-moz-keyframes' ||
@@ -425,10 +447,16 @@ let parse = (css, file, refAtRules) => {
                         start,
                         end: current
                     });
-                }
-                let cStart = current;
-                skipAtRuleContent();
-                if (name == 'global') {
+                    let open = css.indexOf('{', current) + 1,
+                        close = findClosed() - 1;
+                    while (open < close) {
+                        current = css.indexOf('{', open);
+                        processRules();
+                        open = current + 1;
+                    }
+                } else if (name == 'global') {
+                    let cStart = current;
+                    skipAtRuleContent();
                     let left = css.indexOf('{', cStart);
                     tokens.push({
                         type: 'global',
@@ -436,6 +464,8 @@ let parse = (css, file, refAtRules) => {
                         end: current,
                         content: css.slice(left + 1, current - 1)
                     });
+                } else {
+                    skipAtRuleContent();
                 }
             } else {
                 skipAtRule();

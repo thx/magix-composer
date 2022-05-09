@@ -179,6 +179,10 @@ module.exports = {
                 opened--;
                 temp += c;
                 if (!opened && temp) {
+                    if (expr.charAt(i + 1) == '?') {
+                        temp += '?';
+                        i++;
+                    }
                     stack.push(temp);
                     temp = '';
                 }

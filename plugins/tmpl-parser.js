@@ -18,7 +18,7 @@ let { htmlAttrParamFlag,
     //tmplTempInlineStaticKey,
     quickSourceArt } = require('./util-const');
 let tmplCommandAnchorReg = /\x07\d+\x07/;
-let safeVarReg = /[^a-zA-Z0-9_$]/;
+//let safeVarReg = /[^a-zA-Z0-9_$]/;
 let upperCaseReg = /[A-Z]/;
 let valuableReg = /^\s*(?:\x07\d+\x07)+\s*\?\?\s*/;
 let booleanReg = /^\s*(?:\x07\d+\x07)+\s*\?\s*/;
@@ -167,7 +167,10 @@ module.exports = (input, htmlFile, walk) => {
                 } else if (temp == 'mx-ref' ||
                     temp == 'mx5-ref') {
                     token.hasMxRef = true;
-                } else if (temp == tmplTempRealStaticKey) {
+                } /*else if (temp == 'mx-static' ||
+                    temp == 'mx5-static') {
+                    token.customStatic = true;
+                }*/ else if (temp == tmplTempRealStaticKey) {
                     token.mxsRealKey = a.value;
                 } else if (temp == tmplMxViewParamKey) {
                     token.mxvKey = a.value;

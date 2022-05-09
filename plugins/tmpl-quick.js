@@ -90,7 +90,7 @@ let attrMap = require('./html-attrs');
 let tmplUnescape = require('html-entities-decoder');
 let md5 = require('./util-md5');
 //let isMethodReg = /^\s*[a-zA-Z0-9$_]+\([\s\S]+?\)\s*$/;
-let numString = /^'(-?[0-9_](?:[0-9_]*|\.[0-9_]+))'$/;
+let numString = /^'(-?[0-9]+(?:\.[0-9]+)?)'$/;
 let chalk = require('ansis');
 let jsGeneric = require('./js-generic');
 let viewIdReg = /\x1f/g;
@@ -258,23 +258,45 @@ let toNumberString = s => {
             fs = r.indexOf('-'),
             ls = r.lastIndexOf('-');
         if (fi == li &&
-            r.length < 17 &&
             fs == ls &&
             (r.length == 1 ||
                 !r.startsWith('0'))) {
             let n, max,
                 rest;
-            if (fi > -1) {
-                n = r.substring(0, fi);
-                max = Number.MAX_SAFE_INTEGER - 1;
-                rest = r.substring(fi);
+            if (r.startsWith('-')) {
+                if (fi > -1) {
+                    n = r.substring(0, fi);
+                    max = Number.MIN_SAFE_INTEGER + 1;
+                    rest = r.substring(fi);
+                    if (BigInt(n) < max ||
+                        rest.length > 14) {
+                        return s;
+                    }
+                    return n + rest;
+                } else {
+                    max = Number.MIN_SAFE_INTEGER;
+                    if (BigInt(r) < max) {
+                        return r + 'n';
+                    }
+                    return r;
+                }
             } else {
-                n = r;
-                max = Number.MAX_SAFE_INTEGER;
-                rest = '';
-            }
-            if (Number(n) <= max) {
-                return n + rest;
+                if (fi > -1) {
+                    n = r.substring(0, fi);
+                    max = Number.MAX_SAFE_INTEGER - 1;
+                    rest = r.substring(fi);
+                    if (BigInt(n) <= max &&
+                        rest.length < 16) {
+                        return n + rest;
+                    }
+                    return s;
+                } else {
+                    max = Number.MAX_SAFE_INTEGER;
+                    if (BigInt(r) <= max) {
+                        return r;
+                    }
+                    return r + 'n';
+                }
             }
         }
     }
@@ -738,9 +760,13 @@ let parser = (tmpl, e) => {
                     token.inlineStaticValue = a.value;
                 } else if (a.name == 'mx-html' ||
                     a.name == 'x-html' ||
-                    a.name == mxPrefix + '-html') {
+                    a.name == mxPrefix + '-html' ||
+                    a.name == 'mx-safe-html' ||
+                    a.name == mxPrefix + '-safe-html') {
                     token.xHTML = a.value;
                     token.hasXHTML = true;
+                    token.isSafe = a.name == 'mx-safe-html' ||
+                        a.name == mxPrefix + '-safe-html';
                 } else if (a.name == tmplGroupKeyAttr) {
                     token.groupKey = safeVar(utils.camelize(a.value));
                     token.groupKeyNode = tag == tmplGroupTag;
@@ -786,7 +812,8 @@ let parser = (tmpl, e) => {
                             token.customHost = true;
                         } else if (a.name == 'mx-syncexpr') {
                             token.customBindExpr = true;
-                        } else if (a.name == 'mx-forexpr') {
+                        } else if (a.name == 'mx-forexpr' ||
+                            a.name == 'mx-forbind') {
                             token.customBindForExpr = true;
                         } else if (a.name == 'mx-owner') {
                             token.hasMxOwner = true;
@@ -813,7 +840,7 @@ let parser = (tmpl, e) => {
                         }
                         let refCond = e.tmplConditionAttrs[cond];
                         let composer = {
-                            value: `{{${isRef ? '#' : '='}${extract.art}}}${refCond.valuable ? '??' : '?'}`,
+                            value: `{{${isRef ? '#' : '='}${extract.content}}}${refCond.valuable ? '??' : '?'}`,
                             hasExt: refCond.hasExt,
                             condContent: extract.content,
                             isRef,
@@ -828,9 +855,13 @@ let parser = (tmpl, e) => {
                         if (a.name == 'x-html' ||
                             a.name == 'inner-html' ||
                             a.name == 'mx-html' ||
-                            a.name == mxPrefix + '-html') {
+                            a.name == mxPrefix + '-html' ||
+                            a.name == 'mx-safe-html' ||
+                            a.name == mxPrefix + '-safe-html') {
                             token.hasXHTML = true;
                             token.cond = composer;
+                            token.isSafe = a.name == 'mx-safe-html' ||
+                                a.name == mxPrefix + '-safe-html';
                             ignoreAttr = true;
                         } else if (a.name == 'mx-key' ||
                             a.name == mxPrefix + '-key') {
@@ -869,7 +900,8 @@ let parser = (tmpl, e) => {
                             token.customHost = true;
                         } else if (a.name == 'mx-syncexpr') {
                             token.customBindExpr = true;
-                        } else if (a.name == 'mx-forexpr') {
+                        } else if (a.name == 'mx-forexpr' ||
+                            a.name == 'mx-forbind') {
                             token.customBindForExpr = true;
                         } else if (a.name == 'mx-host' ||
                             a.name == mxPrefix + 'host') {
@@ -994,7 +1026,7 @@ let parser = (tmpl, e) => {
                         !start.addedMxSub) {
                         start.addedMxSub = true;
                         start.attrs.unshift({
-                            name: 'mx-sub',
+                            name: 'mx-nest',
                             unary: true,
                             value: true
                         });
@@ -1003,18 +1035,18 @@ let parser = (tmpl, e) => {
             }
         },
         end(tag, { start, end }) {
-            let e = stack.pop();
+            let em = stack.pop();
             if (tag == 'textarea') {
                 textareaCount--;
-                let { children } = e;
-                e.children = [];
+                let { children } = em;
+                em.children = [];
                 //e.unary = true;
                 let value = '';
                 for (let c of children) {
                     value += c.content;
                 }
                 value = value.trim();
-                e.attrs.push({
+                em.attrs.push({
                     name: 'value',
                     value,
                     assign: '=',
@@ -1023,24 +1055,28 @@ let parser = (tmpl, e) => {
             }
 
             if (textareaCount) {
-                e.content = tmpl.slice(e.start, end);
+                em.content = tmpl.slice(em.start, end);
             }
-            if (e.contentStart >= 0) {
-                e.innerHTML = tmpl.slice(e.contentStart, start);
-                delete e.contentStart;
+            if (em.contentStart >= 0) {
+                em.innerHTML = tmpl.slice(em.contentStart, start);
+                delete em.contentStart;
             }
-            if (e.hasXHTML) {
-                let oldChildren = e.children;
-                if (e.cond) {
-                    //console.log(e.cond);
+            if (em.hasXHTML) {
+                let oldChildren = em.children;
+                if (em.cond) {
+                    let tag = `mx-${em.isSafe ? 'safe-' : ''}html`;
+                    if (!em.cond.valuable) {
+                        console.log(chalk.red(`[MXC-Error(tmpl-quick)] ${tag} unsupport boolean condition: ${em.cond.value}${em.cond.line != null ? ` at line: ${em.cond.line}` : ''}`), ' at file', chalk.gray(e.shortHTMLFile));
+                        throw new Error(`[MXC-Error(tmpl-quick)] ${tag} unsupport boolean condition at ${e.shortHTMLFile}`);
+                    }
                     let { condContent,
                         hasExt, valuable,
-                        art, line, isRef, refVar } = e.cond;
+                        art, line, isRef, refVar } = em.cond;
                     let xHTML = valuable ? hasExt || `<%${art}%>` : hasExt;
                     if (isRef) {
                         condContent = refVar;
                     }
-                    e.children = [{
+                    em.children = [{
                         attrs: [],
                         id: 'qk' + idCounter++,
                         pId: current.id,
@@ -1056,11 +1092,12 @@ let parser = (tmpl, e) => {
                         children: [{
                             type: 3,
                             isXHTML: true,
+                            isSafe: em.isSafe,
                             content: xHTML
                         }]
                     }];
                     if (oldChildren.length) {
-                        e.children.push({
+                        em.children.push({
                             attrs: [],
                             id: 'qk' + idCounter++,
                             pId: current.id,
@@ -1074,10 +1111,11 @@ let parser = (tmpl, e) => {
                         });
                     }
                 } else {
-                    e.children = [{
+                    em.children = [{
                         type: 3,
                         isXHTML: true,
-                        content: e.xHTML
+                        isSafe: em.isSafe,
+                        content: em.xHTML
                     }];
                 }
 
@@ -1471,7 +1509,12 @@ let process = (src, e) => {
                     outText = '$text';
                     safeguard = !text.hasSnippet;
                 }
-                //console.log(text,outText);
+                if (node.isSafe) {
+                    outText = `${configs.tmplSanitizeMethiod}(${outText})`;
+                    if (!e.globalVars.includes(configs.tmplSanitizeMethiod)) {
+                        e.globalVars.push(configs.tmplSanitizeMethiod);
+                    }
+                }
                 //console.log(node);
                 //let xHTML = node.isXHTML ? '1' : '0';
                 outText += node.isXHTML ? ',1' : '';
@@ -1547,6 +1590,14 @@ let process = (src, e) => {
             if (node.tag != tmplGroupTag &&
                 node.attrs.length) {
                 for (let a of node.attrs) {
+                    if (a.name == 'mx-bind' ||
+                        a.name == mxPrefix + '-bind') {
+                        continue;
+                    }
+                    if (a.name == 'mx-encode' ||
+                        a.name == mxPrefix + '-encode') {
+                        continue;
+                    }
                     if (a.name == 'mx-ctrl' &&
                         node.customBindExpr) {
                         continue;
@@ -1563,11 +1614,16 @@ let process = (src, e) => {
                         node.customBindForExpr) {
                         continue;
                     }
+                    if (a.name == 'mx-lazyload' ||
+                        a.name == mxPrefix + '-lazyload') {
+                        continue;
+                    }
                     hasAttrs = true;
                     if (a.name == 'mx-bindexpr' ||
                         a.name == 'mx-syncexpr') {
                         a.name = 'mx-ctrl';
-                    } else if (a.name == 'mx-forexpr') {
+                    } else if (a.name == 'mx-forexpr' ||
+                        a.name == 'mx-forbind') {
                         a.name = 'mx-expr';
                     } else if (a.name == 'mx-bindto' ||
                         a.name == 'mx-syncto' ||
@@ -2090,6 +2146,7 @@ let process = (src, e) => {
                     vnodeDeclares[`$vnode_${level + 1}`] = 1;
                     let exist = inlineStaticHTML[node.innerHTML];
                     let html = tmplCmd.getInnerHTML(node);
+                    //html = tmplCmd.recover(html, cmds);
                     html = attrMap.escapeSlashAndBreak(html);
                     if (!exist) {
                         exist = {
@@ -2323,7 +2380,7 @@ let process = (src, e) => {
     for (let t of tokens) {
         genElement(t, 0, rootCanHoisting);
     }
-    let source = `let ${tmplVarTempKey},$vnode_0${zeroIsEmptyArray ? '=[]' : ''}`;
+    let source = `$vnode_0${zeroIsEmptyArray ? '=[]' : ''}`;
     // if (configs.tmplSupportSlotFn) {
     //     source += ',$id=$viewId';
     // }
@@ -2385,6 +2442,11 @@ let process = (src, e) => {
     }
     source += ';';
     let key = `$quick_root_${staticUniqueKey}_${staticCounter++}_static_node`;
+    if (innerCode.includes(tmplVarTempKey)) {
+        source = `let ${tmplVarTempKey},${source}`;
+    } else {
+        source = 'let ' + source;
+    }
     if (rootCanHoisting) {
         staticVars.push({
             key
@@ -2398,6 +2460,7 @@ let process = (src, e) => {
         source += rootNode + '\r\n}';
     }
     source += `\r\nreturn ${rootCanHoisting ? key : rootNode}`;
+
     if (configs.debug) {
         source = `let $__art, $__line, $__ctrl; try { ${source} \r\n} catch (ex) { let msg = 'render view error:' + (ex.message || ex); msg += '\\r\\n\\tsrc art: ' + $__art + '\\r\\n\\tat line: ' + $__line; msg += '\\r\\n\\ttranslate to: ' + $__ctrl + '\\r\\n\\tat file:${encodeSlashRegExp(e.shortHTMLFile)}'; throw msg; } `;
     } else if (configs.tmplQuickWithTryCatch) {

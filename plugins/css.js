@@ -13,6 +13,7 @@ let cssGlobal = require('./css-global');
 let cssComment = require('./css-comment');
 let { cloneAssign } = require('./util');
 let cssTransform = require('./css-transform');
+let cssHeader = require('./css-header');
 let {
     styleInJSFileReg,
     cssVarRefReg,
@@ -186,6 +187,7 @@ module.exports = e => {
                             shortCssFile } = info;
                         let fileName = path.basename(file);
                         let r = cssContentCache[file];
+                        //console.log(r);
                         //从缓存中获取当前文件的信息
                         //如果不存在就返回一个不存在的提示
                         if (!r.exists) {
@@ -227,6 +229,7 @@ module.exports = e => {
                                     newContent = cssTransform.cssContentProcessor(fileContent, {
                                         shortFile: shortCssFile,
                                         file,
+                                        header: r.header,
                                         namesKey: cssNamesKey,
                                         namesMap: cssNamesMap,
                                         varsMap: cssVarsMap,
@@ -270,6 +273,7 @@ module.exports = e => {
                                 cloneAssign(globalAtRules, atRules);
                             }
                         }
+                        //console.log(key,m);
                         let replacement;
                         if (prefix == 'ref') { //如果是引用css则什么都不用做
                             replacement = '';
@@ -377,6 +381,7 @@ module.exports = e => {
                                 fileContent = processVars(fileContent, shortCssFile, file);
                                 fileContent = processAtRefRules(fileContent, shortCssFile, file);
                                 fileContent = processCommonStringRef(fileContent, shortCssFile, file);
+                                fileContent = cssClean.minify(fileContent);
                                 let c = JSON.stringify(fileContent);
                                 c = configs.applyStyleProcessor(c, '"', shortCssFile, cssNamesKey, e);
                                 replacement = uniqueKey + c;
@@ -394,13 +399,14 @@ module.exports = e => {
                         resume();
                     }
                 };
-                let setFileCSS = (file, shortCssFile, css) => {
+                let setFileCSS = (file, shortCssFile, css, header) => {
                     let p = configs.cssContentProcessor(css, shortCssFile, e);
                     if (!p.then) {
                         p = Promise.resolve(p);
                     }
                     p.then(css => {
                         cssContentCache[file].css = css;
+                        cssContentCache[file].header = header;
                         check();
                     }, error => {
                         if (e.contentInfo) {
@@ -454,27 +460,28 @@ module.exports = e => {
                             if (info.exists && info.content) {
                                 cssContentCache[file].map = info.map;
                                 cssContentCache[file].styles = info.styles;
-                                if (!configs.debug) {
-                                    let content = cssClean.minify(info.content);
-                                    setFileCSS(file, shortCssFile, content);
-                                    //console.log('before',info.content);
-                                    // cssnano().process(info.content,
-                                    //     Object.assign({}, configs.cssnano)
-                                    // ).then(r => {
-                                    //     //console.log('after',r.css);
-                                    //     setFileCSS(file, shortCssFile, r.css);
-                                    // }, error => {
-                                    //     if (e.contentInfo) {
-                                    //         file += '@' + e.contentInfo.fileName;
-                                    //     }
-                                    //     reject(error);
-                                    //     check();
-                                    // });
-                                } else {
-                                    let cssStr = info.content;
-                                    cssStr = cssComment.clean(cssStr);
-                                    setFileCSS(file, shortCssFile, cssStr);
-                                }
+                                // if (!configs.debug) {
+                                //     let content = cssClean.minify(info.content);
+                                //     setFileCSS(file, shortCssFile, content);
+                                //console.log('before',info.content);
+                                // cssnano().process(info.content,
+                                //     Object.assign({}, configs.cssnano)
+                                // ).then(r => {
+                                //     //console.log('after',r.css);
+                                //     setFileCSS(file, shortCssFile, r.css);
+                                // }, error => {
+                                //     if (e.contentInfo) {
+                                //         file += '@' + e.contentInfo.fileName;
+                                //     }
+                                //     reject(error);
+                                //     check();
+                                // });
+                                //} else {
+                                let cssStr = info.content;
+                                let header = cssHeader(info.content);
+                                cssStr = cssComment.clean(cssStr);
+                                setFileCSS(file, shortCssFile, cssStr, header);
+                                //}
                             } else {
                                 check();
                             }

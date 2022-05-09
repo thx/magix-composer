@@ -39,6 +39,7 @@ module.exports = {
     tmplSupportSlot: true,
     tmplSupportSlotFn: true,
     tmplBindExprSpliter: ':',
+    tmplSanitizeMethiod: '$sanitize',
     selectorSilentErrorCss: true,//css选择器处理失败时，使用原有的选择器还是提示用户出错
     sourceMapCss: false,
     importCssSyntax: false,

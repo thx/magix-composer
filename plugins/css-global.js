@@ -9,6 +9,7 @@ let configs = require('./util-config');
 let cssChecker = require('./checker-css');
 let cssRead = require('./css-read');
 let cssComment = require('./css-comment');
+let cssHeader = require('./css-header');
 let {
     cssRefReg
 } = require('./util-const');
@@ -50,6 +51,7 @@ let processScope = ctx => {
                 let shortFile = currentFile.replace(configs.commonFolder, '').substring(1);
 
                 if (i.exists && i.content) {
+                    let header = cssHeader(i.content);
                     let c = cssComment.clean(i.content);
                     c = c.replace(cssRefReg, (m, q, file, ext, selector) => {
                         let s = cssTransform.refProcessor(i.file, file, ext, selector, {
@@ -61,6 +63,7 @@ let processScope = ctx => {
                     try {
                         c = cssTransform.cssContentProcessor(c, {
                             shortFile,
+                            header,
                             file: currentFile,
                             namesKey: cssNamesKey,
                             namesMap: scopedCssNamesMap,
