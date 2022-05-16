@@ -169,8 +169,11 @@ module.exports = e => {
                     });
                 };
                 let processCommonStringRef = (c, f, lf) => {
+                    //console.log(JSON.stringify(c) );
                     return c.replace(cssCommonRefReg, (_, q, relateFile, ext, rule) => {
                         return cssTransform.commonStringRefProcessor(lf, relateFile, ext, rule);
+                    }).replace(cssRefReg, (m, q, f, ext, selector) => {
+                        return cssTransform.commonStringRefProcessor(lf, f, ext, selector);
                     });
                 };
                 let resume = () => {
@@ -218,13 +221,16 @@ module.exports = e => {
                             if (!r.namesMap) {
                                 cssNamesMap = Object.create(null);
                                 cssVarsMap = Object.create(null);
+                                //console.log('==',fileContent);
                                 fileContent = fileContent.replace(cssRefReg, (m, q, f, ext, selector) => {
                                     let s = cssTransform.refProcessor(file, f, ext, selector, {
+                                        origin: m,
                                         globalCssNamesMap: globalNamesMap,
                                         globalCssDeclaredFiles: gInfo.declaredFiles
                                     });
                                     return s;
                                 });
+                                //console.log(fileContent);
                                 try {
                                     newContent = cssTransform.cssContentProcessor(fileContent, {
                                         shortFile: shortCssFile,

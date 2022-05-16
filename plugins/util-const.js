@@ -181,7 +181,7 @@ module.exports = {
     styleDependReg: /(?:\.css|\.less|\.mx|\.mmx|\.style)$/i,
     styleInJSFileReg: /(\(\s*)?(['"]?)\(?(ref|compiled)?\x12@:([\w\.\-\/\\]+?)(\.css|\.less|\.mx|\.mmx|\.style)(?::\.?([\w\-@$\(\)\{\},]+))?\)?\2(\s*\))?(;?)/g,
     styleInHTMLReg: /@:([~\w\.\-\/\\]+?)(\.css|\.less|\.mx|\.mmx|\.style):\.?([\w\-]+)/g,
-    cssRefReg: /\[(['"])\s*(?:ref)?\s*@:([\w\.\-\/\\]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):([\w\-]+)\1\]/g,
+    cssRefReg: /\[(['"])\s*(?:ref)?\s*@\x12?:([\w\.\-\/\\]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):([\w\-]+)\1\]/g,
     cssVarRefReg: /(['"])\s*(?:ref)?\s*@:([\w\.\-\/\\]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):(--[\w$\-_]+)\1/,
     isMxEvent(name) {
         if (name.startsWith('mx-')) {

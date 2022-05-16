@@ -40,8 +40,9 @@ let storeAtReg = str => str.replace(atPrefix, '@\x12:');
 //以@开始的名称，如@font-face
 //charset不处理，压缩器会自动处理
 let fontfaceReg = /@font-face\s*\{([^\{\}]*)\}/g;
+let atScrolllineReg = /@scroll-timeline\s+([^\{\}]*)\s*\{([^\{\}]*)\}/g;
 //keyframes，如@-webkit-keyframes xx
-let keyframesReg = /(^|[\s\}])(@(?:-webkit-|-moz-|-o-|-ms-)?keyframes)\s+(['"])?([\w\-]+)\3/g;
+//let keyframesReg = /(^|[\s\}])(@(?:-webkit-|-moz-|-o-|-ms-)?keyframes)\s+(['"])?([\w\-]+)\3/g;
 let cssContentReg = /\{([^\{\}]*)\}/g;
 
 let fixCssKeyName = (key, rules) => {
@@ -133,6 +134,11 @@ let cssAtRuleProcessor = (fileContent, cssNamesKey, file, namesMap) => {
             }
         }
         return `@font-face{${newRules.join('')}}`;
+    }).replace(atScrolllineReg, (match, key, content) => {
+        if (!configs.checker.tmplClassCheck(key)) {
+
+        }
+        return `@scroll-time ${key}{${content}}`;
     });
     fileContent = fileContent.replace(cssContentReg, (_, content) => {
         let rules = content.split(ruleEndReg);
@@ -182,6 +188,18 @@ let cssAtRuleProcessor = (fileContent, cssNamesKey, file, namesMap) => {
                     newContent.push(key + ':' + value);
                 } else if (key.endsWith('animation-name')) {
                     let s = `@keyframes ${value}`;
+                    let tn = namesMap[s];
+                    if (tn) {
+                        cssChecker.storeStyleUsed(file, file, {
+                            atRules: {
+                                [s]: tn
+                            }
+                        });
+                        value = tn;
+                    }
+                    newContent.push(key + ':' + value);
+                } else if (key.endsWith('animation-timeline')) {
+                    let s = `@scroll-timeline ${value}`;
                     let tn = namesMap[s];
                     if (tn) {
                         cssChecker.storeStyleUsed(file, file, {
@@ -538,6 +556,7 @@ let atRuleRefProcessor = (relateFile, file, ext, name, e) => {
     }
 };
 let commonStringRefProcessor = (relateFile, file, ext, rule) => {
+    //console.log(relateFile,file,ext,rule);
     if (file != 'scoped' ||
         ext != '.style') {
         file = path.resolve(path.dirname(relateFile) + sep + file + ext);
@@ -642,7 +661,8 @@ let cssContentProcessor = (css, ctx) => {
                 content: token.content
             });
         } else if (token.type == 'at-rule') {
-            if (token.key == 'keyframes') {
+            if (token.key == 'keyframes' ||
+                token.key == 'scroll-timeline') {
                 let result = id;
                 let p, i;
                 p = id.replace(configs.selectorKeepNameReg, '$1');
@@ -650,7 +670,7 @@ let cssContentProcessor = (css, ctx) => {
                 i = genCssSelector(p, ctx.namesKey, null, 'md5CssSelectorResult@rule_kf');
                 if (t) {
                     result = i + t;
-                    atRules[`@keyframes ${p}`] = i;
+                    atRules[`@${token.key} ${p}`] = i;
                 } else {
                     result = i;
                 }
@@ -659,7 +679,7 @@ let cssContentProcessor = (css, ctx) => {
                     end: token.end,
                     content: result
                 });
-                atRules[`@keyframes ${id}`] = result;
+                atRules[`@${token.key} ${id}`] = result;
             }
         }
     }

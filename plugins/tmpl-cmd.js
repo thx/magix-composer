@@ -8,7 +8,8 @@ let jsGeneric = require('./js-generic');
 let tmplUnescape = require('html-entities-decoder');
 let { htmlminifier: cHTMLMinifier,
     tmplStoreIndexKey,
-    microTmplCommand } = require('./util-const');
+    microTmplCommand,
+    mxPrefix } = require('./util-const');
 //模板文件，模板引擎命令处理，因为我们用的是字符串模板，常见的模板命令如<%=output%> {{output}}，这种通常会影响我们的分析，我们先把它们做替换处理
 let anchor = '\x07';
 let tmplCommandAnchorCompressReg = /(\x07\d+\x07)\s+(?=[<>])/g;
@@ -41,7 +42,11 @@ let getInnerHTML = (node, except = null, withOuter = false) => {
             for (let a of node.attrs) {
                 if (!except ||
                     !except('attr', a)) {
-                    result.push(` ${a.name}`);
+                    let key = a.name;
+                    if (key.startsWith('mx-')) {
+                        key = mxPrefix + key.substring(2);
+                    }
+                    result.push(` ${key}`);
                     if (!a.unary) {
                         result.push(`="${a.value}"`);
                     }

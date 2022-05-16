@@ -7,9 +7,10 @@
 //let configs = require('./util-config');
 let cache = Object.create(null);
 let nameReg = /^(?:\\.|[\w\-\u00c0-\uFFFF])+/;
+let selectorReg = /selector\s*\((['"])?([\s\S]*?)\1\)/g;
 //let atNameReg = /\.@([\w\-\u00c0-\uFFFF]+)/g;
 //modified version of https://github.com/jquery/sizzle/blob/master/src/sizzle.js#L87
-let attrReg = /^\s*((?:\\.|[\w\u00c0-\uFFFF\-])+)\s*(?:(\S?)=\s*(?:(['"])(.*?)\3|(#?(?:\\.|[\w\u00c0-\uFFFF\-])*)|)|)\s*(i)?\]/;
+let attrReg = /^\s*((?:\\.|[\w\u00c0-\uFFFF\-\x12@:\."\/'])+)\s*(?:(\S?)=\s*(?:(['"])(.*?)\3|(#?(?:\\.|[\w\u00c0-\uFFFF\-])*)|)|)\s*(i)?\]/;
 let isWhitespace = c => {
     return c === ' ' || c === '\n' || c === '\t' || c === '\f' || c === '\r';
 };
@@ -88,7 +89,6 @@ let parse = (css, file, refAtRules) => {
     };
     let getNameAndGo = () => {
         let sub = css.substr(current);
-        //console.log(sub,current);
         let id;
         let matches = sub.match(nameReg);
         if (matches) {
@@ -229,6 +229,84 @@ let parse = (css, file, refAtRules) => {
                 }
             }
             idx++;
+        }
+    };
+    let processNames = end => {
+        while (current < end) {
+            stripWhitespaceAndGo(0);
+            let tc = css.charAt(current);
+            if (tc == ',') {
+                current++;
+            } else if (tc == '.' ||
+                tc == '#') {
+                current++;
+                let sc = current;
+                let id = getNameAndGo();
+                if (tc == '.') {
+                    tokens.push({
+                        type: 'class',
+                        name: id,
+                        start: sc,
+                        end: current
+                    });
+                } else if (tc == '#') {
+                    tokens.push({
+                        type: 'id',
+                        name: id,
+                        start: sc,
+                        end: current
+                    });
+                }
+            } else if (tc === '[') {
+                current++;
+                let temp = css.substr(current);
+                let matches = temp.match(attrReg);
+                if (!matches) {
+                    throw {
+                        message: '[MXC Error(css-parser)] bad attribute',
+                        file: file,
+                        extract: getArround()
+                    };
+                }
+                tokens.push({
+                    type: 'attr',
+                    name: matches[1],
+                    start: current - 1,
+                    //first: !prev,
+                    ctrl: matches[2],
+                    quote: matches[3] || '',
+                    end: current + matches[0].length,
+                    value: matches[4] || matches[5],
+                    ignoreCase: !!matches[6]
+                });
+                current += matches[0].length;
+            } else if (tc == ':') {
+                if (css.charAt(current + 1) == ':') {
+                    continue;
+                }
+                current++;
+                let begin = current;
+                let id = getNameAndGo();
+                if (css.charAt(current) === '(') {
+                    if (!unpackPseudos.hasOwnProperty(id)) {
+                        let ti = css.indexOf(')', current);
+                        if (ti > -1) {
+                            current = ti + 1;
+                            if (id == 'global') {
+                                let range = css.substring(begin - 1, current);
+                                tokens.push({
+                                    type: 'global',
+                                    start: begin - 1,
+                                    content: range.slice(8, -1),
+                                    end: current
+                                });
+                            }
+                        }
+                    }
+                }
+            } else {
+                current++;
+            }
         }
     };
     let processRules = () => {
@@ -407,7 +485,7 @@ let parse = (css, file, refAtRules) => {
             }
         }
     };
-    //console.log(file,css);
+    //console.log(file, css);
     while (current < max) {
         stripWhitespaceAndGo(0);
         c = css.charAt(current);
@@ -454,6 +532,34 @@ let parse = (css, file, refAtRules) => {
                         processRules();
                         open = current + 1;
                     }
+                } else if (name == 'scroll-timeline') {
+                    stripWhitespaceAndGo(0);
+                    let start = current;
+                    let key = getNameAndGo();
+                    tokens.push({
+                        type: 'at-rule',
+                        key: 'scroll-timeline',
+                        name: key,
+                        start,
+                        end: current
+                    });
+                    let open = css.indexOf('{', current) + 1,
+                        close = findClosed() - 1;
+                    let rules = css.substring(open, close);
+                    rules.replace(selectorReg, (m, q, content, index) => {
+                        let start = open + index + m.indexOf('(') + 1;
+                        let end = open + index + m.indexOf(')');
+                        if ((css[start] == '\'' &&
+                            css[end - 1] == '\'') || (css[start] == '"' &&
+                                css[end - 1] == '"')) {
+                            start++;
+                            end--;
+                        }
+                        current = start;
+                        processNames(end);
+                    });
+                    current = close;
+                    //processNames(open, close);
                 } else if (name == 'global') {
                     let cStart = current;
                     skipAtRuleContent();

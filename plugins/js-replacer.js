@@ -88,7 +88,7 @@ module.exports = e => {
             fs.access(task[1], (fs.constants ? fs.constants.R_OK : fs.R_OK), ex => {
                 if (ex) {
                     completed++;
-                    locker[task[0]] = `can not find ${task[3]}`;
+                    locker[task[0]] = JSON.stringify(`can not find ${task[3]}`);
                     check();
                 } else {
                     let fn = actions[task[2]],
@@ -107,7 +107,7 @@ module.exports = e => {
                         check();
                     }).catch(ex => {
                         completed++;
-                        locker[task[0]] = `read ${task[1]} error:${ex.message}`;
+                        locker[task[0]] = JSON.stringify(`read ${task[1]} error:${ex.message}`);
                         check();
                     });
                 }

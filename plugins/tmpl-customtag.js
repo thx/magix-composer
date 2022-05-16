@@ -715,25 +715,24 @@ module.exports = {
                 pathname = atpath.resolveContent(pathname, e.moduleId);
                 //console.log('xxx', pathname);
                 let params = new URLSearchParams(searchParams);
-                let hasAppend;
+                let ps = [];
                 //console.log(Object.fromEntries(params.entries()));
                 for (let [k, v] of params) {
                     //console.log(k,v);
                     v = addAtIfNeed(v);
-                    params.set(k, v);
-                    hasAppend = 1;
+                    ps.push(k + '=' + v);
                 }
                 let viewInfo = {
                     path: pathname,
                     pkgName: e.pkgName
                 };
                 let r = configs.mxViewProcessor(viewInfo, e);
-                let view = r == null ? viewInfo.path : r;
+                let view = r || viewInfo.path;
                 //console.log(pathname,'a');
                 //console.log(view);
                 //params.push(`a={{@$_temp}}`);
-                if (hasAppend) {
-                    view += `?${params.toString()}`;
+                if (ps.length) {
+                    view += `?${ps.join('&')}`;
                 }
                 //console.log(view);
                 //支持<mx-vframe src="{{=data}}?./detail" *data="{{#data}}"/>
