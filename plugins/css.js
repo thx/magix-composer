@@ -14,6 +14,7 @@ let cssComment = require('./css-comment');
 let { cloneAssign } = require('./util');
 let cssTransform = require('./css-transform');
 let cssHeader = require('./css-header');
+let asyncReplacer = require('./util-asyncr');
 let {
     styleInJSFileReg,
     cssVarRefReg,
@@ -121,15 +122,15 @@ module.exports = e => {
                         cssChecker.storeHostUsed(e.from, file, temp);
                     }
                 };
-                let processVars = (c, f, lf) => {
-                    return c.replace(cssVarReg, (m, key) => {
+                let processVars = async (c, f, lf) => {
+                    return await asyncReplacer(c, cssVarReg, async (m, key) => {
                         let r = globalVarsMap[key];
                         //console.log(m,key);
                         if (!r) {
                             if (cssVarRefReg.test(key)) {
                                 while (cssVarRefReg.test(m)) {
-                                    m = m.replace(cssVarRefReg, (_1, _2, fn, ext, key) => {
-                                        return cssTransform.varRefProcessor(lf, fn, ext, key, {
+                                    m = await asyncReplacer(m, cssVarRefReg, async (_1, _2, fn, ext, key) => {
+                                        return await cssTransform.varRefProcessor(lf, fn, ext, key, {
                                             origin: m,
                                             globalCssVarsMap: gInfo.varsMap,
                                             globalCssDeclaredFiles: gInfo.declaredFiles
@@ -157,10 +158,10 @@ module.exports = e => {
                         return `var(${r}`;
                     });
                 };
-                let processAtRefRules = (c, f, lf) => {
+                let processAtRefRules = async (c, f, lf) => {
                     //console.log(c);
-                    return c.replace(cssAtRefReg, (_, q, relateFile, ext, prefix, atRule) => {
-                        return cssTransform.recoverAtReg(cssTransform.atRuleRefProcessor(lf, relateFile, ext, atRule, {
+                    return await asyncReplacer(c, cssAtRefReg, async (_, q, relateFile, ext, prefix, atRule) => {
+                        return cssTransform.recoverAtReg(await cssTransform.atRuleRefProcessor(lf, relateFile, ext, atRule, {
                             origin: _,
                             atPrefix: prefix,
                             globalCssAtRules: gInfo.atRules,
@@ -176,8 +177,8 @@ module.exports = e => {
                         return cssTransform.commonStringRefProcessor(lf, f, ext, selector);
                     });
                 };
-                let resume = () => {
-                    e.content = e.content.replace(styleInJSFileReg, (m, left, q, prefix, name, ext, key, right, tail) => {
+                let resume = async () => {
+                    e.content = await asyncReplacer(e.content, styleInJSFileReg, async (m, left, q, prefix, name, ext, key, right, tail) => {
                         if (!prefix &&
                             !key &&
                             (left != '(' || right != ')')) {
@@ -224,10 +225,9 @@ module.exports = e => {
                                 //console.log('==',fileContent);
                                 fileContent = fileContent.replace(cssRefReg, (m, q, f, ext, selector) => {
                                     let s = cssTransform.refProcessor(file, f, ext, selector, {
-                                        origin: m,
                                         globalCssNamesMap: globalNamesMap,
                                         globalCssDeclaredFiles: gInfo.declaredFiles
-                                    });
+                                    }, m);
                                     return s;
                                 });
                                 //console.log(fileContent);
@@ -357,8 +357,8 @@ module.exports = e => {
                             if (configs.debug) {
                                 if (r.map) {
                                     fileContent += r.map;
-                                    fileContent = processVars(fileContent, shortCssFile, file);
-                                    fileContent = processAtRefRules(fileContent, shortCssFile, file);
+                                    fileContent = await processVars(fileContent, shortCssFile, file);
+                                    fileContent = await processAtRefRules(fileContent, shortCssFile, file);
                                     fileContent = processCommonStringRef(fileContent, shortCssFile, file);
                                     let c = JSON.stringify(fileContent);
                                     c = configs.applyStyleProcessor(c, '"', shortCssFile, cssNamesKey, e);
@@ -366,8 +366,8 @@ module.exports = e => {
                                 } else if (r.styles) {
                                     replacement = '[';
                                     for (let s of r.styles) {
-                                        s.css = processVars(s.css, s.short, s.file);
-                                        s.css = processAtRefRules(s.css, s.short, s.file);
+                                        s.css = await processVars(s.css, s.short, s.file);
+                                        s.css = await processAtRefRules(s.css, s.short, s.file);
                                         s.css = processCommonStringRef(s.css, s.short, s.file);
                                         let c = JSON.stringify(s.css + (s.map || ''));
                                         c = configs.applyStyleProcessor(c, '"', s.short, s.key, e);
@@ -376,16 +376,16 @@ module.exports = e => {
                                     replacement = replacement.slice(0, -1);
                                     replacement += ']';
                                 } else {
-                                    fileContent = processVars(fileContent, shortCssFile, file);
-                                    fileContent = processAtRefRules(fileContent, shortCssFile, file);
+                                    fileContent = await processVars(fileContent, shortCssFile, file);
+                                    fileContent = await processAtRefRules(fileContent, shortCssFile, file);
                                     fileContent = processCommonStringRef(fileContent, shortCssFile, file);
                                     let c = JSON.stringify(fileContent);
                                     c = configs.applyStyleProcessor(c, '"', shortCssFile, cssNamesKey, e);
                                     replacement = uniqueKey + c;
                                 }
                             } else {
-                                fileContent = processVars(fileContent, shortCssFile, file);
-                                fileContent = processAtRefRules(fileContent, shortCssFile, file);
+                                fileContent = await processVars(fileContent, shortCssFile, file);
+                                fileContent = await processAtRefRules(fileContent, shortCssFile, file);
                                 fileContent = processCommonStringRef(fileContent, shortCssFile, file);
                                 fileContent = cssClean.minify(fileContent);
                                 let c = JSON.stringify(fileContent);
@@ -455,7 +455,7 @@ module.exports = e => {
                                 styles: gInfo.styles
                             });
                         } else {
-                            promise = cssRead(file, e, match, ext, refInnerStyle);
+                            promise = cssRead(file, e, match, refInnerStyle);
                         }
                         promise.then(info => {
                             //写入缓存，因为同一个view.js中可能对同一个css文件多次引用

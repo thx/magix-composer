@@ -21,6 +21,7 @@ let tmplQuick = require('./tmpl-quick');
 let cssChecker = require('./checker-css');
 let tmplChecker = require('./checker-tmpl');
 let tmplSource = require('./tmpl-tag-source');
+let asyncReplacer = require('./util-asyncr');
 let { revisableGReg,
     tmplGlobalDataRoot,
     revisableTail } = require('./util-const');
@@ -131,6 +132,7 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
 
     //console.log(fileContent);
     fileContent = tmplCmd.store(fileContent, refTmplCommands); //模板命令移除，防止影响分析
+
     //console.log(fileContent);
     fileContent = fileContent.replace(revisableGReg, m => {
         //console.log(m);
@@ -146,8 +148,9 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
     fileContent = configs.compileTmplEnd(fileContent, shared, e);
 
     //console.log(JSON.stringify(fileContent),refTmplCommands);
-    fileContent = tmplAttr.process(fileContent, e, refTmplCommands, cssNamesMap);
+    fileContent = await tmplAttr.process(fileContent, e, refTmplCommands, cssNamesMap);
     //console.log(fileContent);
+
     try {
         //console.log(fileContent);
         fileContent = tmplCmd.tidy(fileContent);
@@ -178,7 +181,6 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
             quickStaticVars.push(s);
         }
     }
-    //console.log(JSON.stringify(source));
     return source;
 };
 module.exports = e => {
@@ -190,8 +192,7 @@ module.exports = e => {
         //console.log(e);
         //debugger;
         //仍然是读取view.js文件内容，把里面@到的文件内容读取进来
-        let promises = [];
-        e.content = e.content.replace(configs.fileTmplReg, (match, quote, ctrl, name, ext) => {
+        e.content = await asyncReplacer(e.content, configs.fileTmplReg, async (match, quote, ctrl, name, ext) => {
             name = atpath.resolvePath(name, moduleId);
             let file = path.resolve(path.dirname(from) + sep + name + '.' + ext);
             let fileContent = name;
@@ -213,13 +214,10 @@ module.exports = e => {
                     console.log(chalk.red('[MXC Tip(tmpl)] conflicting template language'), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.magenta(match + ' and ' + e.contentInfo.templateTag));
                 }
                 let outputString = ctrl == 'compiled';
-                promises.push(processTmpl(fileContent, cssNamesMap, e, reject, lang, outputString, quickStaticVars));
-                return match;
+                return await processTmpl(fileContent, cssNamesMap, e, reject, lang, outputString, quickStaticVars);
             }
             return quote + 'unfound file:' + name + '.' + ext + quote;
         });
-        let data = await Promise.all(promises);
-        e.content = e.content.replace(configs.fileTmplReg, () => data.shift());
         e.quickStaticVars = quickStaticVars;
         resolve(e);
     });

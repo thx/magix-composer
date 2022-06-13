@@ -7,6 +7,7 @@ let cssChecker = require('./checker-css');
 let classRef = require('./tmpl-attr-classref');
 let cssTransform = require('./css-transform');
 let configs = require('./util-config');
+let asyncReplacer = require('./util-asyncr');
 let utils = require('./util');
 let {
     styleInHTMLReg
@@ -21,14 +22,15 @@ let tmplCommandAnchorReg = /\x07\d+\x07/g;
 let tmplCmdReg = /<%([=#])?([\s\S]+?)%>/;
 let stringReg = /\x17([^\x17]*?)\x17/g;
 let attrReg = /(?:\x1c\d+\x1c)?([\w\-:\x1c]+)(?:=(["'])[\s\S]*?\2)?/g;
-module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
+module.exports = async (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
     let selectors = Object.create(null);
     let vars = Object.create(null);
     let tagsOrAttrs = Object.create(null);
     let singleClassTemp,
         singleClassName;
     let checkDuplicate = key => {
-        if (singleClassTemp[key] == 1) {
+        if (singleClassTemp[key] == 1 &&
+            !configs.selectorDSEndReg.test(key)) {
             console.log(chalk.red('[MXC Tip(tmpl-attr-class)] duplicate class value:' + key), 'near:', chalk.magenta(toSrc(singleClassName)), 'at file:', chalk.gray(e.shortHTMLFile));
         }
         singleClassTemp[key] = 1;
@@ -81,7 +83,7 @@ module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
         }
         return key;
     };
-    let classProcessor = (m, c) => {
+    let classProcessor = async (m, c) => {
         singleClassTemp = Object.create(null);
         singleClassName = m;
         tmplCommandAnchorReg.lastIndex = 0;
@@ -97,7 +99,7 @@ module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
         }
         //console.log(c);
         c = c.replace(classNameReg, (m, h, key) => classResult(m, h, key));
-        c = c.replace(styleInHTMLReg, (m, fn, tail, selector) => {
+        c = await asyncReplacer(c, styleInHTMLReg, async (m, fn, tail, selector) => {
             checkDuplicate(fn);
             let { prefix,
                 postfix } = utils.fillAndSplitId(fn);
@@ -110,8 +112,7 @@ module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
             if (!relative) {
                 relative = '.';
             }
-            e.origin = m;
-            let r = cssTransform.refNameProcessor(e.srcHTMLFile, relative + path.sep + styleName, tail, selector, e);
+            let r = await cssTransform.refNameProcessor(e.srcHTMLFile, relative + path.sep + styleName, tail, selector, e, m);
             r = cssTransform.recoverAtReg(r);
             return r;
         });
@@ -138,7 +139,8 @@ module.exports = (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
         }
     });
     tagsOrAttrs[tag] = 1;
-    match = match.replace(classReg, classProcessor); //保证是class属性
+    //保证是class属性
+    match = await asyncReplacer(match, classReg, classProcessor);
     //match = match.replace(styleReg, styleProcessor);
     //console.log(match);
     //console.log(e.cssAtRules);

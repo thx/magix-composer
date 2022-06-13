@@ -146,11 +146,8 @@
     </mx-slot>
 </mx-vframe>
 <!--a.html-->
-<mx-slot use="aBC" fn="{name:'123'}">
-or 
-{{& groups.list([{title:'good'}])}}
+<mx-slot use="a-b-c" fn="{name:'123'}">
 ```
-> 本质上这个`mx-group`被编译成函数，为了防止函数形参与外部相同，建议使用`_`开头的变量
 
 
 ## 模板中保留的变量
@@ -201,8 +198,9 @@ mx-syncfrom mx-bindfrom 从哪个view同步或绑定
 修改动态生成的mx5-expr
 <input mx-forexpr="{{~expr.path}}" />
 
-多绑定，忽略mx-bind，开发时更符合html属性规范
-<input mx-bind="{{:user?.name}}" mx-bind="{{:current.name}}"/>
+多绑定，忽略mx-mbind，开发时更符合html属性规范
+`mx-multi-bind`
+<input mx-mbind="{{:user?.name}}" mx-mbind="{{:current.name}}"/>
 
 
 ## mx-source及 mx-source-whole

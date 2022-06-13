@@ -22,7 +22,7 @@ let tmplCommandAnchorReg = /\x07\d+\x07/;
 let upperCaseReg = /[A-Z]/;
 let valuableReg = /^\s*(?:\x07\d+\x07)+\s*\?\?\s*/;
 let booleanReg = /^\s*(?:\x07\d+\x07)+\s*\?\s*/;
-let isMxViewAttrReg = /^(?:\x1c\d+\x1c)?mx-view$/;
+let isMxViewAttrReg = /^(?:\x1c\d+\x1c)?mx5?-view$/;
 // let updateLinkage = (token, children, pos) => {
 //     token.first = false;
 //     token.firstElement = false;

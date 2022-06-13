@@ -8,6 +8,7 @@ let configs = require('./util-config');
 let cssChecker = require('./checker-css');
 let cssParser = require('./css-parser');
 let cssStringName = require('./css-string-name');
+let cssRead = require('./css-read');
 let {
     atViewPrefix,
     mxPrefix,
@@ -290,10 +291,10 @@ let genCssSelector = (selector, cssNameKey, reservedNames, key) => {
     return mappedName;
 };
 
-let hasRuleFromFile = (file, rule, isVar, type, key) => {
+let hasRuleFromFile = async (file, rule, isVar, type, key) => {
     if (fs.existsSync(file)) {
-        let content = fd.read(file);
-        let rules = cssParser(content);
+        let i = await cssRead(file, {}, '');
+        let rules = cssParser(i.content);
         if (isVar) {
             for (let v of rules.vars) {
                 if (v.name == rule) {
@@ -305,7 +306,9 @@ let hasRuleFromFile = (file, rule, isVar, type, key) => {
             for (let r of rules.tokens) {
                 if (r.type == type && (
                     !key || key == r.key
-                ) && r.name == rule) {
+                ) && (r.name == rule ||
+                    (configs.selectorDSEndReg.test(rule) &&
+                        r.name.startsWith(rule)))) {
                     return true;
                 }
             }
@@ -315,13 +318,13 @@ let hasRuleFromFile = (file, rule, isVar, type, key) => {
     return false;
 };
 
-let refNameProcessor = (relateFile, file, ext, name, e) => {
+let refNameProcessor = async (relateFile, file, ext, name, e, origin) => {
     let silent = configs.selectorSilentErrorCss;
     if (file == 'scoped' && ext == '.style') {
         if (e) {
             let sname = e.globalCssNamesMap[name];
             if (!sname) {
-                sname = silent ? storeAtReg(e.origin) : `["not found ${name} from @{${file}${ext}}"]`;
+                sname = silent ? storeAtReg(origin) : `["not found ${name} from @{${file}${ext}}"]`;
                 cssChecker.storeStyleUsed(relateFile, '/' + file + ext, {
                     selectors: {
                         [name]: silent ? 0 : sname
@@ -355,7 +358,7 @@ let refNameProcessor = (relateFile, file, ext, name, e) => {
         if (e && configs.scopedCssMap[file]) {
             let sname = e.globalCssNamesMap[name];
             if (!sname) {
-                sname = silent ? storeAtReg(e.origin) : `["not found ${name} from @{${file}}"]`;
+                sname = silent ? storeAtReg(origin) : `["not found ${name} from @{${file}}"]`;
             }
             cssChecker.storeStyleUsed(relateFile, file, {
                 selectors: {
@@ -364,7 +367,7 @@ let refNameProcessor = (relateFile, file, ext, name, e) => {
             });
             return sname;
         }
-        let has = hasRuleFromFile(file, name, false, 'class');
+        let has = await hasRuleFromFile(file, name, false, 'class');
         if (!has) {
             if (!silent) {
                 cssChecker.storeStyleUsed(relateFile, file, {
@@ -373,7 +376,7 @@ let refNameProcessor = (relateFile, file, ext, name, e) => {
                     }
                 });
             }
-            return storeAtReg(e.origin);
+            return storeAtReg(origin);
         }
         let p = name.replace(configs.selectorKeepNameReg, '$1');
         let t = name.replace(p, '');
@@ -387,8 +390,8 @@ let refNameProcessor = (relateFile, file, ext, name, e) => {
     }
 };
 
-let refProcessor = (relateFile, file, ext, name, e) => {
-    return `:global(.${refNameProcessor(relateFile, file, ext, name, e)})`;
+let refProcessor = (relateFile, file, ext, name, e, origin) => {
+    return `:global(.${refNameProcessor(relateFile, file, ext, name, e, origin)})`;
 };
 
 let processVar = key => {
@@ -415,7 +418,7 @@ let processVar = key => {
         key
     };
 };
-let varRefProcessor = (relateFile, file, ext, name, e) => {
+let varRefProcessor = async (relateFile, file, ext, name, e) => {
     let silent = configs.selectorSilentErrorCss;
     if (file == 'scoped' &&
         ext == '.style') {
@@ -464,7 +467,7 @@ let varRefProcessor = (relateFile, file, ext, name, e) => {
             return sname;
         }
         //这里可进行文件及规则的实现，对应文件有规则时，返回，否则原样返回
-        let has = hasRuleFromFile(file, name, true);
+        let has = await hasRuleFromFile(file, name, true);
         if (!has) {
             if (!silent) {
                 cssChecker.storeStyleUsed(relateFile, file, {
@@ -485,7 +488,7 @@ let varRefProcessor = (relateFile, file, ext, name, e) => {
         return id;
     }
 };
-let atRuleRefProcessor = (relateFile, file, ext, name, e) => {
+let atRuleRefProcessor = async (relateFile, file, ext, name, e) => {
     let used = '@' + e.atPrefix + ' ' + name;
     let silent = configs.selectorSilentErrorCss;
     if (file == 'scoped' && ext == '.style') {
@@ -527,7 +530,7 @@ let atRuleRefProcessor = (relateFile, file, ext, name, e) => {
             return sname;
         }
         //这里可进行文件及规则的实现，对应文件有规则时，返回，否则原样返回
-        let has = hasRuleFromFile(file, name, false, 'at-rule', e.atPrefix);
+        let has = await hasRuleFromFile(file, name, false, 'at-rule', e.atPrefix);
         if (!has) {
             if (!silent) {
                 cssChecker.storeStyleUsed(relateFile, file, {
@@ -602,7 +605,8 @@ let cssContentProcessor = (css, ctx) => {
         } else if (token.type == 'attr') {
             //[mx-view^="@./path/to/view"]
             let value = token.value;
-            if (token.name == 'mx-view') {
+            if (token.name == 'mx-view' ||
+                token.name == 'mx5-view') {
                 if (value &&
                     (value.startsWith('@') ||
                         value.startsWith('.'))) {

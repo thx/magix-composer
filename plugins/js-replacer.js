@@ -13,8 +13,7 @@ let deps = require('./util-deps');
  */
 let styleId = file => cssTransform.genCssNamesKey(file);
 let style = file => {
-    let ext = path.extname(file);
-    return cssRead(file, {}, '', ext, false).then(r => {
+    return cssRead(file, {}, '', false).then(r => {
         if (configs.debug) {
             return r.exists ? r.content : 'can not find ' + file;
         }

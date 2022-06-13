@@ -57,7 +57,7 @@ let processScope = ctx => {
                         let s = cssTransform.refProcessor(i.file, file, ext, selector, {
                             globalCssNamesMap: scopedCssNamesMap,
                             globalCssDeclaredFiles: scopedDeclaredInFiles
-                        });
+                        }, m);
                         return s;
                     });
                     try {
@@ -110,7 +110,7 @@ let processScope = ctx => {
             let ps = [];
             for (let i = 0, ext; i < list.length; i++) {
                 ext = path.extname(list[i]);
-                ps.push(cssRead(list[i], ctx.context, '', ext));
+                ps.push(cssRead(list[i], ctx.context, ''));
             }
             Promise.all(ps).then(rs => {
                 for (let i = 0; i < rs.length; i++) {

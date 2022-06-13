@@ -367,7 +367,7 @@ let combine = (tmpl, e) => {
     }
     return artExpr.recoverEvent(result.join(''));
 };
-let store = (tmpl, e) => {
+let store = (tmpl, e, queryConditions) => {
     let result = [];
     tmpl = artExpr.addLine(tmpl);
     let artAnchor = utils.uId('art', tmpl);
@@ -378,9 +378,21 @@ let store = (tmpl, e) => {
     for (let part of parts) {
         let lni = artExpr.extractArtInfo(part);
         if (lni) {
-            let codes = findBestCode(lni.art, e, lni.line);
-            let content = artExpr.openTag + codes[0] + artExpr.closeTag;
-            let ctrl = codes[0];
+            let [left, right] = findBestCode(lni.art, e, lni.line);
+            let content = artExpr.openTag + left + artExpr.closeTag;
+            // if (queryConditions) {
+            //     let trimedRight = right.trim();
+            //     if (trimedRight.startsWith('??')) {
+            //         content += '??';
+            //         let i = right.indexOf('??');
+            //         right = right.substring(i + 2);
+            //     } else if (trimedRight.startsWith('?')) {
+            //         content += '?';
+            //         let i = right.indexOf('?');
+            //         right = right.substring(i + 1);
+            //     }
+            // }
+            let ctrl = left;
             if (ctrl.startsWith('/') ||
                 ctrl.startsWith('if') ||
                 ctrl.startsWith('each') ||
@@ -389,13 +401,10 @@ let store = (tmpl, e) => {
                 if (last) {
                     result[result.length - 1] = last.trimEnd();
                 }
-            } else {
-                //codes[1] = codes[1].trimEnd(' ');
             }
-            //console.log(codes);
             let key = `${artAnchor}-${artAnchorIndex++}-${artAnchor}`;
             store[key] = content;
-            result.push(key, codes[1]);
+            result.push(key, right);
         } else {
             result.push(part);
         }
@@ -403,6 +412,7 @@ let store = (tmpl, e) => {
     return {
         content: artExpr.recoverEvent(result.join('')),
         store,
+        artAnchor,
         recoverReg: recoverArtReg
     }
 };

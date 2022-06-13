@@ -59,7 +59,7 @@ let inputTypeReg = /\s+\btype\s*=\s*(['"])([\s\S]+?)\1/;
 let attrAtStartContentHolderReg = /\x03/g;
 let mxViewAttrHolderReg = /\x02/g;
 let atReg = /@/g;
-let mxViewAttrReg = /\s+(\x1c\d+\x1c)?\bmx-view\s*=\s*(['"])([^'"]*?)\2/;
+let mxViewAttrReg = /\s+(\x1c\d+\x1c)?\bmx5?-view\s*=\s*(['"])([^'"]*?)\2/;
 let valuableAttrReg = /\x07\d+\x07\s*\?\?\s*/;
 let booleanAttrReg = /\x07\d+\x07\s*\?\s*/;
 //let wholeCmdReg = /^\s*\x07\d+\x07\s*$/;
@@ -270,7 +270,7 @@ let innerGroup = (result) => {
     result.attrs.replace(attrNameValueReg, (m, prefix, key, q, value) => {
         if (key == 'use' ||
             key == 'name') {
-            value = '__' + (configs.debug ? 'mx-slots-of-' + value : md5(value, 'tmpl-of-slots'));
+            value = '__' + (configs.debug ? 'slot-' + value : md5(value, 'tmpl-of-slots'));
             let attrName = key == 'use' ? tmplGroupUseAttr : tmplGroupKeyAttr;
             newAttrs += ` ${attrName}="${value}"`;
         } else {

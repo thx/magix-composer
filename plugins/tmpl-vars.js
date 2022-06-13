@@ -35,7 +35,7 @@ let bindReg2 = /\s*(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*/g;
 let textaraReg = /<textarea([^>]*)>([\s\S]*?)<\/textarea>/g;
 let groupKeyReg = new RegExp(`\\s${tmplGroupKeyAttr}="[^"]+"`);
 let groupContextReg = /\s+fn(?=\="([^"]+)"|\s|$)/;
-let mxViewAttrReg = /(?:\b|\s|^)mx-view\s*=\s*(['"])([\s\S]+?)\1/g;
+let mxViewAttrReg = /(?:\b|\s|^)mx5?-view\s*=\s*(['"])([\s\S]+?)\1/g;
 //let checkboxReg = /(?:\b|\s|^)type\s*=\s*(['"])checkbox\1/;
 let indeterminateReg = /(?:\b|\s|^)indeterminate(?:\b|\s|=|$)/;
 //let supportLocalReg = /^\x01\d+[a-zA-Z0-9_]+$/;
@@ -706,6 +706,7 @@ module.exports = {
                 m = modifiers[i];
                 fn = fn.substring(0, m.start) + m.content + fn.substring(m.end);
             }
+            //console.log(fn);
             modifiers = [];
             ast = acorn.parse(fn, null, sourceFile);
         }

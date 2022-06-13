@@ -508,7 +508,6 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         return match;
     });
     source += `';`;
-    //console.log(JSON.stringify(source));
     source = source
         .replace(viewIdReg, `'+$viewId+'`)
         .replace(reg, '');
@@ -820,7 +819,8 @@ let parser = (tmpl, e) => {
                         } else if (a.name == 'mx-host' ||
                             a.name == mxPrefix + 'host') {
                             token.bindHost = true;
-                        } else if (a.name == 'mx-view') {
+                        } else if (a.name == 'mx-view' ||
+                            a.name == 'mx5-view') {
                             token.isMxView = true;
                         } else if ((a.name.startsWith('mx-') ||
                             a.name.startsWith(mxPrefix)) &&
@@ -906,7 +906,8 @@ let parser = (tmpl, e) => {
                         } else if (a.name == 'mx-host' ||
                             a.name == mxPrefix + 'host') {
                             token.bindHost = true;
-                        } else if (a.name == 'mx-view') {
+                        } else if (a.name == 'mx-view' ||
+                            a.name == 'mx5-view') {
                             token.isMxView = true;
                         } else if ((a.name.startsWith('mx-') ||
                             a.name.startsWith(mxPrefix)) &&
@@ -917,7 +918,7 @@ let parser = (tmpl, e) => {
                             token.magixEvents[e] = 1;
                         } else if (a.name == 'mx-ref' ||
                             a.name == mxPrefix + '-ref') {
-                            token.isRef = true;
+                            token.hasMxRef = true;
                         } else if (a.name == tmplMxViewParamKey) {
                             ignoreAttr = true;
                             token.mxViewParamValue = a;
@@ -974,7 +975,8 @@ let parser = (tmpl, e) => {
             }
             if ((token.customBindExpr ||
                 token.syncFromUI ||
-                token.needHost) && (
+                token.needHost ||
+                token.hasMxRef) && (
                     !token.bindHost &&
                     !token.customHost
                 )) {
@@ -1181,7 +1183,7 @@ let Directives = {
         }
         let initial = ctrl.value.startsWith('$q_v_') ? '' : `let ${ctrl.value}=${shortList}[${ctrl.key}];`;
         if (ctrl.asc) {
-            decs += `${listCount}=${shortList}.length`;
+            decs += `${listCount}=${shortList}?.length`;
             if (ctrl.first != -1) {
                 initial += `let ${ctrl.first}=${ctrl.key}===0;`;
             }
@@ -1192,7 +1194,7 @@ let Directives = {
             }
             decs += `,${ctrl.key}=0`;
         } else {
-            decs += `${ctrl.key}=${shortList}.length`;
+            decs += `${ctrl.key}=${shortList}?.length`;
             if (ctrl.first != -1 ||
                 ctrl.last != -1 ||
                 ctrl.step != 1) {
@@ -1590,8 +1592,8 @@ let process = (src, e) => {
             if (node.tag != tmplGroupTag &&
                 node.attrs.length) {
                 for (let a of node.attrs) {
-                    if (a.name == 'mx-bind' ||
-                        a.name == mxPrefix + '-bind') {
+                    if (a.name == 'mx-mbind' ||
+                        a.name == mxPrefix + '-mbind') {
                         continue;
                     }
                     if (a.name == 'mx-encode' ||
@@ -1828,7 +1830,7 @@ let process = (src, e) => {
                                 cond = `(${tmplVarTempKey}=${cond},${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&console.error('make sure attr:"${a.name}" returned only true , false or null value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
                             } else if (attr.direct) {
                                 let assign = attr.returned == tmplVarTempKey ? '' : `${tmplVarTempKey}=${attr.returned},`;
-                                attr.returned = `(${assign}${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&console.error('make sure attr:"${a.name}" returned only null or false value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
+                                attr.returned = `(${assign}${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&console.error('make sure attr:"${a.name}" returned only true , false or null value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})`;
                             }
                         } else if (a.name.startsWith(mxPrefix) &&
                             a.cond &&
@@ -1836,7 +1838,7 @@ let process = (src, e) => {
                             !a.cond.valuable &&
                             cond.endsWith(')&&')) {
                             cond = cond.slice(1, -3);
-                            cond = `((${tmplVarTempKey}=${cond},(${tmplVarTempKey}||${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&console.error('make sure attr:"${a.name}" returned only null or false value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})))&&`;
+                            cond = `((${tmplVarTempKey}=${cond},(${tmplVarTempKey}||${tmplVarTempKey}!=null&&${tmplVarTempKey}!==false&&${tmplVarTempKey}!==true&&console.error('make sure attr:"${a.name}" returned only true , false or null value\\r\\nat line:'+$__line+'\\r\\nat file:${encodeSlashRegExp(e.shortHTMLFile)}\\r\\ncurrent returned value is:',JSON.stringify(${tmplVarTempKey})),${tmplVarTempKey})))&&`;
                         }
                     }
                     if (attr.direct) {
@@ -2082,7 +2084,7 @@ let process = (src, e) => {
                 }
                 if (node.groupContextNode) {
                     //key += '($id';
-                    key += '(';
+                    key += '?.(';
                     // if (node.groupUniqueContent) {
                     //     let splitContents = jsGeneric.splitParams(node.groupUniqueContent);
                     //     let extendKeys = [];
@@ -2417,7 +2419,8 @@ let process = (src, e) => {
     //let hasGroupFunction = e.globalGroupKeys.length > 0;
     //let hasGroupFunction = passedGroupRootRefs.length > 0;
 
-    if (e.globalVars.length) {
+    if (e.globalVars &&
+        e.globalVars.length) {
         let vars = ',\r\n{',
             out;
         for (let key of e.globalVars) {

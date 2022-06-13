@@ -515,7 +515,7 @@ let processContent = (from, to, content, inwatch) => {
         let after = Promise.resolve(e);
         if (headers.execAfterProcessor) {
             let processor = configs.compileJSEnd;
-            let result = processor(e.content, e);
+            let result = processor.call(configs, e.content, e);
             if (utils.isString(result)) {
                 e.content = result;
             } else if (result && utils.isFunction(result.then)) {

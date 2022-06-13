@@ -8,6 +8,8 @@ let sourceArtTagReg = /(?:[\r\n]([ \t\f]*))?<mx-source-whole[^>]*>([\s\S]+?)<\/m
 let artSourceWholeReg = /(?:[\r\n]([ \t\f]*))?\{{2}mx-source-whole[^\}]*\}{2}([\s\S]+?)\{{2}\/mx-source-whole\}{2}/g;
 let sourceHTMLTagReg = /(?:[\r\n]([ \t\f]*))?<mx-source-origin[^>]*>([\s\S]+?)<\/mx-source-origin>/g;
 let artSourceHTMLReg = /(?:[\r\n]([ \t\f]*))?\{{2}mx-source-origin[^\}]*\}{2}([\s\S]+?)\{{2}\/mx-source-origin\}{2}/g;
+let tagReg = /<([^>\s\/]+)([^>]*)>/g;
+
 let braceReg = /[{}]/g;
 let escapeAnd = /&/g;
 let escapeHTMLReg = /[<>&]/g;
@@ -144,10 +146,29 @@ module.exports = {
             if (translateArt) {
                 content = encodeHTMLAndArt(content);
             } else if (translateHTML) {
-                let info = tmplArt.store(content, e);
-                //console.log(info.content);
-                let tmpl = encodeHTML(info.content);
-                content = tmplArt.recover(tmpl, info.recoverReg, info.store);
+                let { content: c1,
+                    store, recoverReg,
+                    artAnchor } = tmplArt.store(content, e);
+                //处理<input name="{{=name}}??"/>的情况
+                let condAttrReg = new RegExp(`\\s+([^=\\/\\s]+)\\s*=\\s*(["'])(${artAnchor}-\\d+-${artAnchor})(\\?\\?\?)(${artAnchor}-\\d+-${artAnchor})?\\2`, 'g');
+                c1 = c1.replace(tagReg, (m, tag, attrs) => {
+                    attrs = attrs.replace(condAttrReg, (_, key, q, prefix, cond, postfix) => {
+                        let pcond = store[prefix].slice(2, -2);
+                        if (pcond.startsWith('#') ||
+                            pcond.startsWith('=')) {
+                            pcond = pcond.substring(1);
+                        }
+                        if (postfix) {
+                            return `{{if ${pcond}}} ${key}="${postfix}"{{/if}}`;
+                        } else {
+                            return `{{if ${pcond}}} ${key}="${prefix}"{{/if}}`;
+                        }
+                        return _;
+                    });
+                    return `<${tag}${attrs}>`;
+                });
+                let tmpl = encodeHTML(c1);
+                content = tmplArt.recover(tmpl, recoverReg, store);
             }
             return `<${tag}${restAttrs}>${content}</${tag}>`;
         };
