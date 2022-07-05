@@ -60,7 +60,7 @@ let recoverRevisableStrings = (tmpl, values) => {
     }
     return tmpl;
 };
-let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, quickStaticVars) => {
+let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, quickStaticVars, prefix) => {
     e.revisableStrings = [];
     let file = e.srcHTMLFile;
     let shared = {};
@@ -173,7 +173,7 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
     fileContent = recoverRevisableStrings(fileContent, e.revisableStrings);
     //console.log(fileContent);
     fileContent = idRemove(fileContent);
-    let { source, statics } = tmplQuick.process(fileContent, e);
+    let { source, statics } = tmplQuick.process(fileContent, e, prefix);
     for (let s of statics) {
         let testKey = `~${s.key}`;
         if (!quickStaticVars[testKey]) {
@@ -192,7 +192,7 @@ module.exports = e => {
         //console.log(e);
         //debugger;
         //仍然是读取view.js文件内容，把里面@到的文件内容读取进来
-        e.content = await asyncReplacer(e.content, configs.fileTmplReg, async (match, quote, ctrl, name, ext) => {
+        e.content = await asyncReplacer(e.content, configs.fileTmplReg, async (match, prefix, quote, ctrl, name, ext) => {
             name = atpath.resolvePath(name, moduleId);
             let file = path.resolve(path.dirname(from) + sep + name + '.' + ext);
             let fileContent = name;
@@ -214,9 +214,13 @@ module.exports = e => {
                     console.log(chalk.red('[MXC Tip(tmpl)] conflicting template language'), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.magenta(match + ' and ' + e.contentInfo.templateTag));
                 }
                 let outputString = ctrl == 'compiled';
-                return await processTmpl(fileContent, cssNamesMap, e, reject, lang, outputString, quickStaticVars);
+                let p = (prefix || '').trim();
+                if (p.startsWith('tmpl')) {
+                    p = 'tmpl';
+                }
+                return p + await processTmpl(fileContent, cssNamesMap, e, reject, lang, outputString, quickStaticVars, prefix);
             }
-            return quote + 'unfound file:' + name + '.' + ext + quote;
+            return (prefix || '') + quote + 'unfound file:' + name + '.' + ext + quote;
         });
         e.quickStaticVars = quickStaticVars;
         resolve(e);

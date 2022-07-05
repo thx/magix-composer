@@ -1,6 +1,6 @@
 /*
     js中依赖处理
-    允许通过resolveRequire进行依赖重写
+    允许通过resolveImport进行依赖重写
  */
 //分析js中的require命令
 //let a=require('aa');
@@ -226,7 +226,7 @@ module.exports = {
         return replacement;
     },
     getReqReplacement(reqInfo, e) {
-        configs.resolveRequire(reqInfo, e);
+        configs.resolveImport(reqInfo, e);
         if (reqInfo.hasOwnProperty('replacement')) {
             return reqInfo.replacement;
         }

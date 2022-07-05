@@ -22,7 +22,30 @@ let FileStylesComplex = Object.create(null);
 //记录使用过的全局变量
 let FileStylesGlobalVarUsed = Object.create(null);
 
+
+let isGlobalVar = vars => {
+    let result = false;
+    let prefixes = [...configs.cssGlobalVarPrefixes, consts.cssScopedVarPrefix];
+    for (let prefix of prefixes) {
+        if (vars.startsWith(prefix)) {
+            result = true;
+            // for (let host in FileStylesGlobalVarUsed) {
+            //     let dest = FileStylesGlobalVarUsed[host];
+            //     if (!usedGlobalVars[host]) {
+            //         usedGlobalVars[host] = Object.create(null);
+            //     }
+            //     if (dest[vars]) {
+            //         usedGlobalVars[host][vars] = ItemDeclared;
+            //         result = true;
+            //     }
+            // }
+            break;
+        }
+    }
+    return result;
+};
 module.exports = {
+    isGlobalVar,
     reset() {
         //文件之间关系，主要通过js关联的html和css
         FileRelationships = Object.create(null);
@@ -270,27 +293,6 @@ module.exports = {
             return result;
         };
         let usedGlobalVars = Object.create(null);
-        let updateGlobalVars = vars => {
-            let result = false;
-            let prefixes = [...configs.cssGlobalVarPrefixes, consts.cssScopedVarPrefix];
-            for (let prefix of prefixes) {
-                if (vars.startsWith(prefix)) {
-                    result = true;
-                    // for (let host in FileStylesGlobalVarUsed) {
-                    //     let dest = FileStylesGlobalVarUsed[host];
-                    //     if (!usedGlobalVars[host]) {
-                    //         usedGlobalVars[host] = Object.create(null);
-                    //     }
-                    //     if (dest[vars]) {
-                    //         usedGlobalVars[host][vars] = ItemDeclared;
-                    //         result = true;
-                    //     }
-                    // }
-                    break;
-                }
-            }
-            return result;
-        };
         let templateUsed = Object.create(null);
         for (let fr in FileRelationships) {
             let { styles, templates } = FileRelationships[fr];
@@ -358,7 +360,7 @@ module.exports = {
                         if (selector == 'selectors') {
                             neverUsedSelectors.push('.' + key);
                         } else if (selector == 'vars') {
-                            if (!updateGlobalVars(key)) {
+                            if (!isGlobalVar(key)) {
                                 neverUsedVars.push(key);
                             }
                         } else if (selector == 'tagsOrAttrs') {

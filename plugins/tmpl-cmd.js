@@ -177,7 +177,7 @@ module.exports = {
             return value;
         });
     },
-    queryCmdsOfTmpl(tmpl, refTmplCommands, processor) {
+    updateCmdsOfTmpl(tmpl, refTmplCommands, processor) {
         tmpl.replace(tmplCommandAnchorReg, match => {
             let value = refTmplCommands[match];
             if (processor) {

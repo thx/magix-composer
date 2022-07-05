@@ -1,3 +1,8 @@
+## 3.2.7
+1. 增加`mx-lazycreate`延迟`vframe`的创建
+2. 重构`<mx-slot fn/>`及`<mx-slot use/>`的使用方式
+3. 修复`{{if 8>expr}}`写法无法被正确识别的`bug`
+
 ## 3.2.6
 1. `<mx-source/>`标签内支持`<input name="{{=name}}??"/>`的条件写法
 2. 增加`util-asyncr`模块，让字符串的`replace`方法支持异步函数

@@ -146,15 +146,13 @@
     </mx-slot>
 </mx-vframe>
 <!--a.html-->
-<mx-slot use="a-b-c" fn="{name:'123'}">
+<mx-slot use="a-b-c" fn="{{={name:'123'}}}">
 ```
 
 
 ## 模板中保留的变量
 1. $viewId
 > 用于获取当前view的id
-2. $groups
-> 用于获取所有`<mx-group>`
 
 ## 组件配置
 > 通过组件目录下放置`_cfg.js`来提供配置，如
@@ -238,7 +236,7 @@ mx-syncfrom mx-bindfrom 从哪个view同步或绑定
 ### mx-html及mx-safe-html
 <div mx-html="{{=html}}"></div>
 <div mx-safe-html="{{=html}}"></div> 需提供$sanitize方法
-<div mx-html="{{=html}}?"></div> 不支持boolean判断
+<div mx-html="{{=html}}??"></div> 不支持boolean判断
 
 
 ## 内置模块或路径转换

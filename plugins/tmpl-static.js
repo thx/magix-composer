@@ -64,10 +64,10 @@ module.exports = (tmpl, file, htmlUId) => {
                     }
                     //group不能嵌套在其它元素里，必须顶层
                     //自身不能嵌套
-                    if (n.groupKeyNode &&
-                        n.pId) {
-                        throw new Error(`[MXC(tmpl-static)] mx-slot key="${n.groupKey}" can not nested in other elements at file:` + file);
-                    }
+                    // if (n.groupKeyNode &&
+                    //     n.pId) {
+                    //     throw new Error(`[MXC(tmpl-static)] mx-slot key="${n.groupKey}" can not nested in other elements at file:` + file);
+                    // }
                     let attr = tmpl.substring(n.attrsStart, n.attrsEnd);
                     let html = tmpl.substring(n.start, n.end)
                         .replace(staticRealKeyReg, '');

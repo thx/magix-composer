@@ -12,7 +12,7 @@ let utils = require('./util');
 let {
     styleInHTMLReg
 } = require('./util-const');
-let classReg = /\bclass\s*=\s*"([^"]+)"/g;
+let classReg = /\bclass\s*=\s*(["'])([^"]+)\1/g;
 //let styleReg = /\bstyle\s*=\s*"[^"]+"/g;
 let classNameReg = /(\s|^|\x07)([\w\-\u00c0-\uFFFF]+)(?=\s|$|\x07)/g;
 //let cssVarReg = /var\s*\(\s*([^),]+)\s*(?=[,)])/g;
@@ -83,7 +83,7 @@ module.exports = async (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
         }
         return key;
     };
-    let classProcessor = async (m, c) => {
+    let classProcessor = async (m, q, c) => {
         singleClassTemp = Object.create(null);
         singleClassName = m;
         tmplCommandAnchorReg.lastIndex = 0;

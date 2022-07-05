@@ -61,7 +61,7 @@ module.exports = () => {
         configs.htmlFileGlobalReg = new RegExp(configs.htmlFileReg, 'g');
 
         //模板处理，即处理view.html文件
-        configs.fileTmplReg = new RegExp('([\'"`])(compiled)?\\x12@:([^\'"\\s@]+)\\.(' + tmplExtNames.join('|') + ')\\1', 'g');
+        configs.fileTmplReg = new RegExp('(\\btmpl\\s*:\\s*)?([\'"`])(compiled)?\\x12@:([^\'"\\s@]+)\\.(' + tmplExtNames.join('|') + ')\\2', 'g');
 
         let rsPrefix = configs.revisableStringPrefix;
         if (!rsPrefix) {

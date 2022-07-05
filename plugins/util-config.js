@@ -106,7 +106,7 @@ module.exports = {
     resolveModuleId(id) { //处理模块id时的处理器
         return id;
     },
-    resolveRequire() { //处理rqeuire时的处理器
+    resolveImport() { //处理rqeuire时的处理器
     },
     stringProcessor(content, from) {//处理string
     },

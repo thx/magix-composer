@@ -3,6 +3,7 @@ let {
     tmplGroupId,
     tmplGroupParentId,
 } = require('./util-const');
+let configs = require('./util-config');
 let pureGroupReg = new RegExp(`<(\\/)?${tmplGroupTag}`, 'g');
 let pureNumberGroupReg = new RegExp(`<(\\/)?${tmplGroupTag}\\d+`, 'g');
 let hasGroupIdReg = new RegExp(`\\s${tmplGroupId}="\\d+_\\d+"`);
@@ -12,11 +13,14 @@ let removeBalanceInfo = tmpl => {
     });
 };
 let getRegexpByIndex = index => {
-    return new RegExp(`<${tmplGroupTag}${index}([^>]*)>([\\s\\S]*?)<\\/${tmplGroupTag}${index}>`, 'g');
+    return new RegExp(`<${tmplGroupTag}${index}([^>]*)>([\\s\\S]*?)<\\/${tmplGroupTag}${index}([^>]*)>`, 'g');
 };
+
+let transformSlotName = n => '__' + (configs.debug ? 'slot-' + n : md5(n, 'tmpl-of-slots'));
 module.exports = {
     getRegexpByIndex,
     removeBalanceInfo,
+    transformSlotName,
     setNestLinkId(tmpl) {
         let pureGroupIndex = 0;
         let nextPlace = 0;

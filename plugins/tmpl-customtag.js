@@ -18,6 +18,10 @@ let md5 = require('./util-md5');
 let {
     quickDirectTagName,
     quickCommandTagName,
+    quickGroupObjectPrefix,
+    quickGroupRootPrefix,
+    quickOpenAttr,
+    quickCloseAttr,
     htmlAttrParamPrefix,
     htmlAttrParamFlag,
     galleryProcessed,
@@ -31,9 +35,10 @@ let {
     styleInHTMLReg,
     atViewPrefix,
     tmplGroupId,
-    quickPlaceholderTagName,
     tmplGroupParentId,
-    quickGroupFnPrefix
+    tmplGroupStashAttr,
+    hasCmdReg,
+    quickPlaceholderTagName,
 } = require('./util-const');
 let deps = require('./util-deps');
 let sep = path.sep;
@@ -63,12 +68,9 @@ let mxViewAttrReg = /\s+(\x1c\d+\x1c)?\bmx5?-view\s*=\s*(['"])([^'"]*?)\2/;
 let valuableAttrReg = /\x07\d+\x07\s*\?\?\s*/;
 let booleanAttrReg = /\x07\d+\x07\s*\?\s*/;
 //let wholeCmdReg = /^\s*\x07\d+\x07\s*$/;
-let hasCmdReg = /\x07\d+\x07/;
 let httpProtocolReg = /^(?:https?:)?\/\//i;
 let httpProtocolReg1 = /^https?:(?:[\/\\]{2})?/i;
 let classReg = /\s+\bclass\s*=\s*"([^"]+)"/g;
-let safeVarReg = /[^a-zA-Z0-9_$]/g;
-let safeVar = s => s.replace(safeVarReg, '_');
 let entities = {
     '>': '&gt;',
     '<': '&lt;'
@@ -78,11 +80,12 @@ let entities = {
 //     '&lt;': '<'
 // };
 let encodeRegexp = /[<>]/g;
+let mxSlotUse = htmlAttrParamPrefix + 'mx-slot-use';
 //let decodeRegexp = /&(lt|gt);/g;
 let atDesc = (a, b) => b.at - a.at;
 let encodeEntities = m => m.replace(encodeRegexp, _ => entities[_]);
-let toParamKey = key => {
-    key = htmlAttrParamPrefix + key.substring(1);
+let toParamKey = (key, cut = 1) => {
+    key = htmlAttrParamPrefix + key.substring(cut);
     return key;
 };
 let relativeReg = /\.{1,2}\//g;
@@ -165,6 +168,20 @@ let innerView = (result, info, gRoot, extInfo, actions, e) => {
         if (key.startsWith(htmlAttrParamFlag)) {
             key = toParamKey(key);
             viewKey = true;
+            if (key.startsWith(mxSlotUse)) {
+                let rest = key.substring(mxSlotUse.length);
+                if (rest &&
+                    rest.startsWith('[') &&
+                    rest.endsWith(']')) {
+                    let n = rest.slice(1, -1);
+                    let v = qblance.transformSlotName(n);
+                    key = toParamKey(v, 0);
+                } else {
+                    let v = qblance.transformSlotName(value);
+                    key = toParamKey(v, 0);
+                    value = `{{# ${quickGroupObjectPrefix}${utils.camSafeVar(v)} }}`;
+                }
+            }
         }
         //处理其它属性
         if (info) {
@@ -264,20 +281,37 @@ let innerLink = result => {
     }
     return html;
 };
-let innerGroup = (result) => {
+let innerGroup = ({ attrs, endAttrs, content }) => {
     let tag = tmplGroupTag;
     let newAttrs = ``;
-    result.attrs.replace(attrNameValueReg, (m, prefix, key, q, value) => {
+    let open = '',
+        close = '';
+    attrs.replace(attrNameValueReg, (m, prefix, key, q, value) => {
         if (key == 'use' ||
             key == 'name') {
-            value = '__' + (configs.debug ? 'slot-' + value : md5(value, 'tmpl-of-slots'));
-            let attrName = key == 'use' ? tmplGroupUseAttr : tmplGroupKeyAttr;
-            newAttrs += ` ${attrName}="${value}"`;
+            let dynamicValue = hasCmdReg.test(value);
+            let stash = '',
+                attrKey = '';
+            if (key == 'use') {
+                if (!dynamicValue) {
+                    stash = ` ${tmplGroupStashAttr}="<%${quickGroupRootPrefix}%>"`;
+                    value = qblance.transformSlotName(value);
+                }
+                attrKey = tmplGroupUseAttr;
+            } else {
+                value = qblance.transformSlotName(value);
+                attrKey = tmplGroupKeyAttr;
+            }
+            newAttrs += `${stash} ${attrKey}="${value}"`;
         } else {
+            if (key == 'fn') {
+                open = ` ${quickOpenAttr}="<%{%>"`;
+                close = ` ${quickCloseAttr}="<%}%>"`;
+            }
             newAttrs += ` ${key}${q ? `="${value}"` : ''}`;
         }
     });
-    return `<${tag} ${newAttrs}>${result.content}</${tag}${result.endAttrs}>`;
+    return `<${tag}${open} ${newAttrs}>${content}</${tag}${endAttrs}${close}>`;
 };
 module.exports = {
     async process(tmpl, extInfo, e) {
@@ -746,20 +780,20 @@ module.exports = {
                 let reg = qblance.getRegexpByIndex(0);
                 result.content = setInfo.tmpl;
 
-                result.content = result.content.replace(reg, (_, attrs, content) => {
+                result.content = result.content.replace(reg, (_, attrs, content, closeAttrs) => {
                     let attrName,
                         rewriteName;
                     attrs = attrs.replace(groupKeyReg, (m, k) => {
                         attrName = k;
-                        rewriteName = safeVar(k) + '_$' + (groupIndex++);
+                        rewriteName = utils.safeVar(k) + '_$' + (groupIndex++);
                         return ` ${tmplGroupKeyAttr}="${rewriteName}"`;
                     });
                     if (attrName) {
                         innerSlotsIndex++;
                         let groupIds = ` ${tmplGroupParentId}="${groupIdKey}${groupIdIndex++}" ${tmplGroupId}="${groupIdKey}${groupIdIndex++}"`;
 
-                        html += ` *${attrName}="{{# ${quickGroupFnPrefix}${rewriteName} }}"`;
-                        return `<!--${innerSlotsIndex}${innerViewKey}${innerSlotsIndex}--><${tmplGroupTag} ${groupIds} ${attrs}>${content}</${tmplGroupTag}><!--/${innerSlotsIndex}${innerViewKey}${innerSlotsIndex}-->`;
+                        html += ` *${attrName}="{{# ${quickGroupObjectPrefix}${rewriteName} }}"`;
+                        return `<!--${innerSlotsIndex}${innerViewKey}${innerSlotsIndex}--><${tmplGroupTag} ${groupIds} ${attrs}>${content}</${tmplGroupTag}${closeAttrs}><!--/${innerSlotsIndex}${innerViewKey}${innerSlotsIndex}-->`;
                     }
                     return _;
                 });
@@ -838,6 +872,7 @@ module.exports = {
                 while (start) {
                     if (start.pId) {
                         start = map[start.pId];
+                        break;
                     } else {
                         break;
                     }
@@ -875,6 +910,7 @@ module.exports = {
             rootPlaces.length = 0;
             tokens = tmplParser(tmpl, e.shortHTMLFile, checkCallback);
         }
+        //console.log(tmpl, rootPlaces);
         if (configs.tmplSupportSlot &&
             rootPlaces.length) {
             rootPlaces = rootPlaces.sort(atDesc);
@@ -947,7 +983,7 @@ module.exports = {
         tmpl = tmplCmd.recover(tmpl, cmdCache);
         tmpl = tmpl.replace(attrAtStartContentHolderReg, '@');
         tmpl = tmpl.replace(mxViewAttrHolderReg, 'mx-view');
-
+        //console.log(groupReplacements);
         for (let [key, value] of groupReplacements) {
             tmpl = tmpl.replace(key, value);
         }

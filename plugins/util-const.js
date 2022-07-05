@@ -3,8 +3,8 @@ let trimSemicolons = /;+/g;
 let trimEndSemicolon = /;$/;
 let trimSpaceAroundColon = /\s*:\s*/g;
 let hasCmdReg = /\x07\d+\x07/;
-let spaceReg = /[ \n\f\r]+/;
-let cspace = /\s+/g;
+//let spaceReg = /[ \n\f\r]+/;
+//let cspace = /\s+/g;
 let mxPrefix = 'mx5';
 let getRandomString = () => {
     if (crypto.randomInt) {
@@ -42,6 +42,8 @@ let reserveKeys = {
     'syncto': 1,//mx-syncto 从界面同步数据到js时，指示同步到哪个view上
     'syncfrom': 1,
     'reset': 1,//还原属性
+    'lazyload': 1,
+    'lazycreate': 1,
     'sub': 1,
     'child': 1,
     'children': 1,
@@ -55,6 +57,7 @@ let tmplMxEventReg = new RegExp(`\\b(?:\\x1c\\d+\\x1c)?(?:mx5?-)(?!${innerKeys}\
 module.exports = {
     magixSpliter: '\x1e',
     mxPrefix,
+    hasCmdReg,
     artCommandReg: /\{\{(?!\{)[\s\S]*?\}\}(?!\})/g,//art模板
     microTmplCommand: /<%[\s\S]*?%>/g,
     revisableReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/,
@@ -80,16 +83,16 @@ module.exports = {
                 .replace(trimEndSemicolon, '')
                 .replace(trimSpaceAroundColon, ':');
         },//压缩css,如标签属性中的style
-        sortClassName(names) {
-            if (!hasCmdReg.test(names)) {
-                let xNames = names.split(spaceReg);
-                names = xNames.sort().join(' ');
-            } else {
-                names = names.replace(cspace, ' ');
-            }
-            //console.log(names);
-            return names;
-        },
+        // sortClassName(names) {
+        //     if (!hasCmdReg.test(names)) {
+        //         let xNames = names.split(spaceReg);
+        //         names = xNames.sort().join(' ');
+        //     } else {
+        //         names = names.replace(cspace, ' ');
+        //     }
+        //     //console.log(names);
+        //     return names;
+        // },
         removeEmptyAttributes: false, //移除空的属性
         collapseInlineTagWhitespace: true, //移除标签间的空白
         caseSensitive: true, //保持大小写
@@ -155,9 +158,10 @@ module.exports = {
     quickSourceArt: 'qk:srcart',
     quickDeclareAttr: 'qk:declare',
     quickNeedHostAttr: 'qk:needhost',
-    quickGroupFnPrefix: '$slots.',
+    quickGroupRootPrefix: '$slots',
     quickGroupObjectPrefix: '$slots.',
     quickGroupObjectPrefix1: '$slots[',
+    quickContextRef: '$mxSlotUse',
     quickLoopReg: /\b(qk:each|qk:forin)\s*=\s*(['"])([^'"]+)\2/g,
     quickConditionReg: /\b(qk:if|qk:elif|qk:for)\s*=\s*(['"])([^'"]+)\2/g,
     //tmplTempStaticKey: '_t_:static',
@@ -170,6 +174,7 @@ module.exports = {
     tmplGroupUseAttr: '_t_:guse',
     tmplCondPrefix: '_t_:cond_',
     tmplGroupRootAttr: '_t_:root',
+    tmplGroupStashAttr: '_t_:stash',
     tmplGroupId: '_t_:gid',
     tmplGroupParentId: '_t_:gpid',
     tmplMxViewParamKey: '$',

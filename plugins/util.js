@@ -123,16 +123,23 @@ let hash = str => {
     }
     return hash >>> 0;
 };
+
+let safeVarReg = /[^a-zA-Z0-9_$]/g;
+let safeVar = s => s.replace(safeVarReg, '_');
 module.exports = {
     hash,
     clone,
     uId,
+    safeVar,
     cloneAssign,
     extractModuleId,
     fillAndSplitId,
     hyphenate,
     camelize,
     isObject,
+    camSafeVar(n) {
+        return safeVar(camelize(n));
+    },
     normalizePathSeperator(v) {
         return v.replace(sepReg, '/');
     },

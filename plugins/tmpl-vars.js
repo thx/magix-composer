@@ -23,7 +23,8 @@ let {
     quickGroupObjectPrefix,
     quickGroupObjectPrefix1,
     quickNeedHostAttr,
-    revisableTail
+    quickContextRef,
+    revisableTail,
 } = require('./util-const');
 let regexp = require('./util-rcache');
 let qblance = require('./tmpl-qblance');
@@ -33,7 +34,7 @@ let tagReg = /<([^>\s\/\x07]+)([^>]*)>/g;
 let bindReg = /([^>\s\/=]+)\s*=\s*(["'])(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*\2/g;
 let bindReg2 = /\s*(<%'\x17\d+\x11[^\x11]+\x11\x17'%>)?<%:([\s\S]+?)%>\s*/g;
 let textaraReg = /<textarea([^>]*)>([\s\S]*?)<\/textarea>/g;
-let groupKeyReg = new RegExp(`\\s${tmplGroupKeyAttr}="[^"]+"`);
+let groupKeyReg = new RegExp(`\\s${tmplGroupKeyAttr}="([^"]+)"`);
 let groupContextReg = /\s+fn(?=\="([^"]+)"|\s|$)/;
 let mxViewAttrReg = /(?:\b|\s|^)mx5?-view\s*=\s*(['"])([\s\S]+?)\1/g;
 //let checkboxReg = /(?:\b|\s|^)type\s*=\s*(['"])checkbox\1/;
@@ -56,8 +57,13 @@ let artCtrlsReg = /<%'\x17\d+\x11([^\x11]+)\x11\x17'%>(<%[\s\S]+?%>)/g;
 let stringHolderReg = /(['"])?(\x04\d+\x04)\1/g;
 let refKeyReg = /,'\x1e[#a-zA-Z0-9]+'$/;
 let globalTmplRootReg = /[\x03\x06]\./g;
+let globalVariableReg = /[\x03\x06]\.[a-zA-Z0-9\$\_]+/g;
+let localVariableReg = /\x01\d+[a-zA-Z0-9\$\_]+/;
 let namedOfRefData = /^<%#([\s\S]+),'\x1e[\s\S]+'%>$/;
-let recastSlots = /\$slots\./g;
+let recastSlots = regexp.get(regexp.escape(quickGroupObjectPrefix), 'g');
+let viewIdReg = /\x1f/;
+let mxSlotUseReg = regexp.get(regexp.escape(quickContextRef) + '\\(([\'"])([^\\)]+)\\1\\)', 'g');
+
 let cmap = {
     [vphUse]: '\x01',
     [vphDcd]: '\x02',
@@ -445,6 +451,7 @@ let isLiteralValue = v => {
  */
 module.exports = {
     process: (tmpl, e) => {
+        //console.log(tmpl);
         let sourceFile = e.shortHTMLFile;
         let fn = [];
         let index = 0;
@@ -515,7 +522,7 @@ module.exports = {
             if (msg.startsWith('[') && msg.endsWith(']')) {
                 msg = msg.substring(1, msg.length - 1);
             }
-            console.log(chalk.red('[MXC Error(tmpl-vars)] parse template quick code ast error: ' + ex.message), 'at', chalk.magenta(e.shortHTMLFile), 'near', chalk.red(msg));
+            console.log(chalk.red('[MXC Error(tmpl-vars)] parse template quick code ast error: ' + ex.message), 'at', chalk.magenta(sourceFile), 'near', chalk.red(msg));
             throw ex;
         }
         /*
@@ -524,6 +531,7 @@ module.exports = {
         let modifiers = [];
         let stringStore = Object.create(null);
         let stringIndex = 0;
+        let mxSlotUses = Object.create(null);
         let recoverString = tmpl => {
             //还原代码中的字符串，代码中的字符串占位符使用\x04包裹
             //模板中的绑定特殊字符串包含\x17，这里要区分这个字符串的来源
@@ -631,6 +639,18 @@ module.exports = {
                         !vname.startsWith(quickGroupObjectPrefix1)) {
                         constVars[vname] = 1;
                     }
+                    if (vname == quickContextRef) {
+                        let a = node.arguments;
+                        let full = fn.slice(node.start, node.end);
+                        let first = a[0];
+                        if (a.length != 1 ||
+                            (first &&
+                                first.type != 'Literal')) {
+                            console.log(chalk.red('[MXC Tip(tmpl-vars)] bad ' + full), 'at', chalk.gray(sourceFile));
+                        }
+                        let v = first && first.value || 'failed';
+                        mxSlotUses[`\x17${v}\x17`] = v;
+                    }
                 }
             },
             VariableDeclarator(node) {
@@ -673,7 +693,7 @@ module.exports = {
                     modifiers.push({
                         start: node.start,
                         end: node.end,
-                        content: PeelPatternVariable(fn, node, e.shortHTMLFile)
+                        content: PeelPatternVariable(fn, node, sourceFile)
                     });
                 }
             },
@@ -682,7 +702,7 @@ module.exports = {
             //     modifiers.push({
             //         start: node.start,
             //         end: node.end,
-            //         content: PeelTemplateLiteral(fn, node, e.shortHTMLFile)
+            //         content: PeelTemplateLiteral(fn, node, sourceFile)
             //     });
             // },
             ExpressionStatement(node) {
@@ -694,7 +714,7 @@ module.exports = {
                         modifiers.push({
                             start: node.start,
                             end: node.end,
-                            content: PeelPatternVariable(fn, expr, e.shortHTMLFile)
+                            content: PeelPatternVariable(fn, expr, sourceFile)
                         });
                     }
                 }
@@ -854,7 +874,7 @@ module.exports = {
                 if (globalVars[tname] || globalVars[tname]) {
                     let msg = '[MXC Error(tmpl-vars)] avoid redeclare variable:' + tname;
                     console.log(chalk.red(msg), 'at', chalk.gray(sourceFile));
-                    throw new Error(msg);
+                    //throw new Error(msg);
                 }
                 let r = queryRangeByPos(node.start);
                 if (r) {
@@ -926,7 +946,7 @@ module.exports = {
                 if (!node.left.name) {
                     let msg = '[MXC Error(tmpl-vars)] avoid assignment to object:' + recoverString(stripChar(stripNum(fn.slice(node.start, node.end)))).replace(globalTmplRootReg, '');
                     console.log(chalk.red(msg), 'at', chalk.gray(sourceFile));
-                    throw new Error(msg);
+                    //throw new Error(msg);
                 }
                 let key = stripChar(node.left.name);
                 let m = key.match(/\x10(\d+)/);
@@ -966,7 +986,7 @@ module.exports = {
             }
         });
         fn = toSourceHTML(fn); //把合法的js代码转换成原来的模板代码
-        let shortHTMLUId = md5(e.shortHTMLFile, tmplStaticVarsKey);
+        let shortHTMLUId = md5(sourceFile, tmplStaticVarsKey);
         let cmdStore = Object.create(null);
         let getParentRefKey = (key, pos) => {
             let list = globalTracker[key];
@@ -1318,7 +1338,7 @@ module.exports = {
                                     && i > 0)) {
                                     rKeys.push('.');
                                 }
-                                rKeys.push(md5(`${e.shortHTMLFile}#${sk}`, 'revisableString', '', true, null, false));
+                                rKeys.push(md5(`${sourceFile}#${sk}`, 'revisableString', '', true, null, false));
                                 if (i >= 0 &&
                                     i != max) {
                                     rKeys.push('.');
@@ -1537,26 +1557,64 @@ module.exports = {
             return '<' + tag + attrs + '>';
         });
         fn = tmplCmd.store(fn, cmdStore);
+        let groupContextVars = Object.create(null);
         if (configs.tmplSupportSlot) {
             let setInfo = qblance.setBalaceInfo(fn);
             fn = qblance.processContent(setInfo.tmpl,
                 setInfo.index, true,
                 (_, attrs, content) => {
-                    tmplCmd.queryCmdsOfTmpl(content, cmdStore, e => {
+                    tmplCmd.updateCmdsOfTmpl(content, cmdStore, e => {
                         return e.replace(namedOfRefData, '<%#$1%>');
                     });
                     if (groupKeyReg.test(attrs)) {
                         let ctxKeys = [],
-                            keys = [];
+                            keys = [],
+                            hasCtx,
+                            ctxVars = '';
                         attrs.replace(groupContextReg, (m, c) => {
+                            hasCtx = 1;
+                            ctxVars = c;
                             if (c) {
                                 let ck = c.split(',');
                                 for (let k of ck) {
                                     k = k.trim();
+                                    //处理 slot=2有默认值的情况
+                                    let ei = k.indexOf('=');
+                                    if (ei > 0) {
+                                        k = k.substring(0, ei).trim();
+                                    }
+                                    groupContextVars[k] = k;
                                     ctxKeys.push(k);
                                 }
                             }
                         });
+                        if (hasCtx &&
+                            configs.debug) {
+                            let m = attrs.match(groupKeyReg);
+                            let gName = m[1];
+                            gName = gName.substring(7);
+                            let tip = k => {
+                                console.log(chalk.red(`[MXC-Error(tmpl-vars)] <mx-slot name="${gName}" fn="${ctxVars}"/>: variable "${k}" should come from fn attribute`), chalk.magenta('at file ' + sourceFile));
+                            }
+                            let rootVarProcessor = _ => {
+                                let k = findRoot(_);
+                                if (k &&
+                                    !ctxKeys.includes(k)) {
+                                    if (k == '$slots') {
+                                        k = '<mx-slot use/>';
+                                    }
+                                    tip(k);
+                                }
+                            };
+                            if (viewIdReg.test(content)) {
+                                tip('$viewId');
+                            }
+                            tmplCmd.updateCmdsOfTmpl(content, cmdStore, e => {
+                                e.replace(globalVariableReg, rootVarProcessor)
+                                    .replace(localVariableReg, rootVarProcessor);
+                                return e;
+                            });
+                        }
                         content = tmplCmd.recover(content, cmdStore);
                         content.replace(tmplCmdReg, (m, o, c) => {
                             if (c) {
@@ -1583,15 +1641,26 @@ module.exports = {
                     }
                     return _;
                 });
-            //console.log(fn);
             fn = qblance.removeBalanceInfo(fn);
         }
         fn = tmplCmd.recover(fn, cmdStore);
         fn = recoverString(stripNum(fn));
+        if (configs.tmplSupportSlot &&
+            configs.tmplSupportSlotFn) {
+            fn = fn.replace(mxSlotUseReg, (_, q, k) => {
+                let v = mxSlotUses[k];
+                if (v) {
+                    return quickGroupObjectPrefix + utils.camSafeVar(qblance.transformSlotName(v));
+                }
+                return _;
+            });
+            delete globalVars[quickContextRef];
+        }
         e.globalVars = Object.keys(globalVars);
+        e.groupContextVars = groupContextVars;
         e.shortHTMLUId = shortHTMLUId;
         //e.globalGroupKeys = groupAllKeys;
-        //console.log(fn);
+        //console.log(JSON.stringify(fn));
         return fn;
     }
 };

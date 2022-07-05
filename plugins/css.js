@@ -74,9 +74,9 @@ module.exports = e => {
                                         [selectors]: 1
                                     }
                                 });
-                            } /*else {
+                            } else {
                                 cssChecker.storeUnexist(e.from, 'selectors ' + selectors + ' from scoped.style');
-                            }*/
+                            }
                         }
                         if (type == 'vars') {
                             if (varsIsGlobal) {
@@ -89,9 +89,9 @@ module.exports = e => {
                                             [selectors]: 1
                                         }
                                     });
-                                } /*else {
+                                } else {
                                     cssChecker.storeUnexist(e.from, 'vars ' + selectors + ' from scoped.style');
-                                }*/
+                                }
                             }
                         }
                         if (type == 'atRules') {
@@ -139,7 +139,8 @@ module.exports = e => {
                                 }
                                 return cssTransform.recoverAtReg(m);
                             } else {
-                                let { isGlobal, key: k2 } = cssTransform.processVar(key);
+                                let { isGlobal,
+                                    key: k2 } = cssTransform.processVar(key);
                                 if (isGlobal) {
                                     r = k2;
                                     //cssChecker.storeStyleGlobalVars(lf, key);
@@ -148,7 +149,7 @@ module.exports = e => {
                                     return m;
                                 }
                             }
-                        } else {
+                        } else if (!cssChecker.isGlobalVar(key)) {
                             cssChecker.storeStyleUsed(lf, lf, {
                                 vars: {
                                     [key]: r
@@ -306,9 +307,9 @@ module.exports = e => {
                                         }
                                     }
                                 }
-                                if (!silent) {
-                                    storeHostUsed('vars', scopedStyle, file, key, isGlobal);
-                                }
+                                // if (!silent) {
+                                storeHostUsed('vars', scopedStyle, file, key, isGlobal);
+                                //}
                             } else if (key.startsWith('@font-face(') ||
                                 key.startsWith('@keyframes(')) {
                                 let sub = key.slice(11, -1);
@@ -325,9 +326,9 @@ module.exports = e => {
                                         c = 'unfound-at-rules-[' + key + ']-from-' + fileName;
                                     }
                                 }
-                                if (!silent) {
-                                    storeHostUsed('atRules', scopedStyle, file, selector);
-                                }
+                                // if (!silent) {
+                                storeHostUsed('atRules', scopedStyle, file, selector);
+                                //}
                             } else {
                                 let di = key.indexOf('--${');
                                 if (di > 0) {
@@ -337,6 +338,7 @@ module.exports = e => {
                                 c = cssNamesMap[key];
                                 let silent = false;
                                 if (!c) {
+                                    //console.log(configs.selectorSilentErrorCss,c,key)
                                     if (configs.selectorSilentErrorCss) {
                                         silent = true;
                                         c = `${prefix || ''}@:${name}${ext}:${key}`;
@@ -344,9 +346,9 @@ module.exports = e => {
                                         c = 'unfound-[' + key + ']-from-' + fileName;
                                     }
                                 }
-                                if (!silent) {
-                                    storeHostUsed('selectors', scopedStyle, file, key);
-                                }
+                                //if (!silent) {
+                                storeHostUsed('selectors', scopedStyle, file, key);
+                                //}
                             }
                             replacement = q + c + postfix + q;
                         } else { //输出整个css文件内容

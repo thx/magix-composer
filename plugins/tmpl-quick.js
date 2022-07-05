@@ -64,7 +64,7 @@ let {
     quickConditionReg,
     quickLoopReg,
     quickElseAttr,
-    quickGroupFnPrefix,
+    quickGroupObjectPrefix,
     tmplStoreIndexKey,
     tmplTempRealStaticKey,
     artCommandReg,
@@ -92,7 +92,7 @@ let md5 = require('./util-md5');
 //let isMethodReg = /^\s*[a-zA-Z0-9$_]+\([\s\S]+?\)\s*$/;
 let numString = /^'(-?[0-9]+(?:\.[0-9]+)?)'$/;
 let chalk = require('ansis');
-let jsGeneric = require('./js-generic');
+//let jsGeneric = require('./js-generic');
 let viewIdReg = /\x1f/g;
 let artCtrlReg = /(?:<%'(\d+)\x11([^\x11]+)\x11'%>)?<%([#=:&])?([\s\S]+?)%>/g;
 let inReg = /\(([\s\S]+?)\s*,\s*([^),]+),\s*([^),]+),\s*([^),]+),\s*(1|-1),\s*([a-zA-Z0-9\.\$\_]+)\)\s*in\s+([\S\s]+)/;
@@ -119,9 +119,8 @@ let tmplRadioOrCheckboxKey = 'tmpl_radio_or_checkbox_names';
 let longExpr = /[\.\[\]]/;
 let spanceAndSemicolonReg = /\s*;*\s*$/;
 let trimExtraElseReg = /else\s*\{\s*\}/g;
-let safeVarReg = /[^a-zA-Z0-9_$]/g;
-let safeVar = s => s.replace(safeVarReg, '_');
 let slotReg = /\$slots\.([a-zA-Z0-9$_]+)/g;
+let vnodeMathcer = /=(\$vnode_\d+)/;
 let quoteMap = {
     '\t': '\\t',
     '&#13;': '\\r',
@@ -227,25 +226,25 @@ let findInnerUsedGroups = (start, groupsOfUsed, groupsOfDeclaredMap) => {
     return groups;
 };
 
-let isVarName = str => {
-    if (str.trim() !== str) {
-        return false;
-    }
+// let isVarName = str => {
+//     if (str.trim() !== str) {
+//         return false;
+//     }
 
-    try {
-        new Function(str, 'var ' + str);
-    } catch (_) {
-        return false;
-    }
+//     try {
+//         new Function(str, 'var ' + str);
+//     } catch (_) {
+//         return false;
+//     }
 
-    return true;
-};
+//     return true;
+// };
 
 let checkInFunctionSlot = (token, map, snippet, file) => {
     let start = token;
     while (start) {
         if (start.groupContextNode) {
-            console.log(chalk.gray(snippet), chalk.magenta(`use custom bind or sync expression in context slot fn="${start.groupContext}" at ${file}`));
+            console.log(chalk.red('[MXC-Error(tmpl-quick)]'), chalk.gray(snippet), chalk.magenta(`use custom bind or sync expression in context slot fn="${start.groupContext}" at ${file}`));
         }
         start = map[start.pId];
     }
@@ -312,7 +311,8 @@ let findAllInnerGroups = (start,
         refGroups.push(start);
         let used = findInnerUsedGroups(start, groupsOfUsed, groupsOfDeclaredMap);
         for (let p of groupsOfDeclared) {
-            if (p.groupParentId == start.groupId) {
+            if (p.groupParentId &&
+                p.groupParentId == start.groupId) {
                 used.push(p);
             }
         }
@@ -766,12 +766,31 @@ let parser = (tmpl, e) => {
                     token.hasXHTML = true;
                     token.isSafe = a.name == 'mx-safe-html' ||
                         a.name == mxPrefix + '-safe-html';
+                } else if (a.name == 'mx-lazycreate' ||
+                    a.name == mxPrefix + '-lazycreate') {
+                    token.lazyCreate = true;
                 } else if (a.name == tmplGroupKeyAttr) {
-                    token.groupKey = safeVar(utils.camelize(a.value));
+                    token.groupKey = utils.camSafeVar(a.value);
                     token.groupKeyNode = tag == tmplGroupTag;
                 } else if (a.name == tmplGroupUseAttr) {
-                    token.groupUse = safeVar(utils.camelize(a.value));
-                    token.groupUseNode = tag == tmplGroupTag;
+                    tmplCommandAnchorReg.lastIndex = 0;
+                    if (tmplCommandAnchorReg.test(a.value)) {
+                        //console.log(chalk.red(`[MXC-Error(tmpl-quick)] <mx-slot use/> can not use variable name. use {{& slot }} instead`), chalk.magenta('at file ' + e.shortHTMLFile));
+                        tmplCommandAnchorReg.lastIndex = 0;
+                        let t = tmplCmd.recover(a.value, cmds);
+                        let fi = extractArtAndCtrlFrom(t);
+                        if (fi.length > 1 || fi.length < 1) {
+                            throw new Error('[MXC-Error(tmpl-quick)] bad <mx-slot use/> ' + t + ' at ' + e.shortHTMLFile);
+                        }
+                        token.tag = quickDirectTagName;
+                        fi = fi[0];
+                        token.directArt = fi.art;
+                        token.directLine = fi.line;
+                        token.directCtrl = fi.ctrl;
+                    } else {
+                        token.groupUse = utils.camSafeVar(a.value);
+                        token.groupUseNode = tag == tmplGroupTag;
+                    }
                 } else if (a.name == tmplGroupId) {
                     token.groupId = a.value;
                 } else if (a.name == tmplGroupParentId) {
@@ -1300,16 +1319,16 @@ let preProcess = (src, e) => {
                 let { art, ctrls, line } = i;
                 let sourceArt = ` ${quickSourceArt}="${attrMap.escapeAttr(art)}"`;
                 if (ctrls[0] == 'each') {
-                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickEachAttr}="{{\x1e${line}${art.substring(5)}}}">`;
+                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickEachAttr}="{{\x1e${line} ${art.substring(5)}}}">`;
                 } else if (ctrls[0] == 'forin') {
-                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForInAttr}="{{\x1e${line}${art.substring(6)}}}">`;
+                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForInAttr}="{{\x1e${line} ${art.substring(6)}}}">`;
                 } else if (ctrls[0] == 'for') {
-                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForAttr}="{{\x1e${line}${art.substring(4)}}}">`;
+                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickForAttr}="{{\x1e${line} ${art.substring(4)}}}">`;
                 } else if (ctrls[0] == 'if') {
-                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickIfAttr}="{{\x1e${line}${art.substring(3)}}}">`;
+                    return `<${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickIfAttr}="{{\x1e${line} ${art.substring(3)}}}">`;
                 } else if (ctrls[0] == 'else') {
                     if (ctrls[1] == 'if') {
-                        return `</${quickCommandTagName} ${quickCloseAttr}="<%}%>"><${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseIfAttr}="{{\x1e${line}${art.substring(7)}}}">`;
+                        return `</${quickCommandTagName} ${quickCloseAttr}="<%}%>"><${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseIfAttr}="{{\x1e${line} ${art.substring(7)}}}">`;
                     }
                     return `</${quickCommandTagName} ${quickCloseAttr}="<%}%>"><${quickCommandTagName}${sourceArt} ${quickAutoAttr} ${quickOpenAttr}="<%{%>" ${quickElseAttr}>`;
                 } else if (art.startsWith('/each') ||
@@ -1458,10 +1477,12 @@ let combineSamePush = (src, pushed) => {
     }
     return src;
 };
-let process = (src, e) => {
+let process = (src, e, prefix) => {
     //console.log(src);
     let { cmds, tokens, map, groupUsed, groupDeclared } = parser(`${src}`, e);
     let snippets = [],
+        groupContextVars = e.groupContextVars,
+        globalVars = e.globalVars,
         groupDeclaredMap = Object.create(null),
         groupIdsMap = Object.create(null);
     let allGroups = groupDeclared.concat(groupUsed);
@@ -1485,14 +1506,14 @@ let process = (src, e) => {
         staticObjects = Object.create(null),
         staticCounter = 0,
         inlineStaticHTML = Object.create(null),
+        transformGlobalGroupToLocal = Object.create(null),
         staticUniqueKey = e.shortHTMLUId,
         declaredRemoved = [],
         rebuildDeclared = [],
         rootCanHoisting = true;
-    let genElement = (node, level, inStaticNode, usedParentVars = {}, levelPrefix) => {
-        if (!levelPrefix) {
-            levelPrefix = `$vnode_${level}`;
-        }
+    let genElement = (node, level, inStaticNode,
+        usedParentVars = {}, vnodePrefix = '$vnode') => {
+        let levelPrefix = `${vnodePrefix}_${level}`;
         if (node.type == 3) {
             let content = node.content;
             let cnt = tmplCmd.recover(content, cmds);
@@ -1513,8 +1534,8 @@ let process = (src, e) => {
                 }
                 if (node.isSafe) {
                     outText = `${configs.tmplSanitizeMethiod}(${outText})`;
-                    if (!e.globalVars.includes(configs.tmplSanitizeMethiod)) {
-                        e.globalVars.push(configs.tmplSanitizeMethiod);
+                    if (!globalVars.includes(configs.tmplSanitizeMethiod)) {
+                        globalVars.push(configs.tmplSanitizeMethiod);
                     }
                 }
                 //console.log(node);
@@ -1588,6 +1609,12 @@ let process = (src, e) => {
             if (configs.tmplSupportSlotFn) {
                 inGroup = isInGroupNode(node, allGroups, false);
             }
+            if (node.groupRootRefs) {
+                let rRefs = node.groupRootRefs.split(',');
+                for (let r of rRefs) {
+                    delete groupContextVars[r];
+                }
+            }
             //console.log(node.tag, node.attrs);
             if (node.tag != tmplGroupTag &&
                 node.attrs.length) {
@@ -1620,6 +1647,10 @@ let process = (src, e) => {
                         a.name == mxPrefix + '-lazyload') {
                         continue;
                     }
+                    if (a.name == 'mx-lazycreate' ||
+                        a.name == mxPrefix + '-lazycreate') {
+                        continue;
+                    }
                     hasAttrs = true;
                     if (a.name == 'mx-bindexpr' ||
                         a.name == 'mx-syncexpr') {
@@ -1632,6 +1663,10 @@ let process = (src, e) => {
                         a.name == 'mx-syncfrom' ||
                         a.name == 'mx-bindfrom') {
                         a.name = 'mx-host';
+                    } else if (node.lazyCreate &&
+                        (a.name == 'mx-view' ||
+                            a.name == mxPrefix + '-view')) {
+                        a.name = mxPrefix + '-lazy-view';
                     }
                     //console.log(groupKeyAsParams);
                     if (node.isMxView &&
@@ -1758,7 +1793,7 @@ let process = (src, e) => {
 
                     let oKey = encodeSlashRegExp(a.name);
                     //console.log(a.name);
-                    let key = `$$_${safeVar(a.name)}`;
+                    let key = `$$_${utils.safeVar(a.name)}`;
                     let attr = serAttrs(key, a.value, !bAttr, e, inGroup);
                     attr.returned = toNumberString(attr.returned);
                     hasCtrl = attr.hasCtrl;
@@ -1997,13 +2032,12 @@ let process = (src, e) => {
             }
             snippets.push(`${start.join('')}`);
             if (node.groupKeyNode) {
-
                 if (node.groupContextNode) {
                     if (!configs.tmplSupportSlotFn) {
                         console.log(chalk.red('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute'), 'at file:', chalk.gray(e.shortHTMLFile));
                         throw new Error('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute at file:' + e.shortHTMLFile);
                     }
-                    let newKey = quickGroupFnPrefix + node.groupKey;// //`${quickGroupFnPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
+                    let newKey = quickGroupObjectPrefix + node.groupKey;// //`${quickGroupObjectPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
                     snippets.push(`\nif(!${newKey}){`);
 
                     let params = '';// = `$id = $viewId`;
@@ -2037,7 +2071,7 @@ let process = (src, e) => {
                             });
                         }
                     } else {
-                        key = quickGroupFnPrefix + node.groupKey;
+                        key = quickGroupObjectPrefix + node.groupKey;
                     }
                     if (node.children.length) {
                         snippets.push(`\r\nif(!${key}){\r\n`);
@@ -2065,23 +2099,23 @@ let process = (src, e) => {
                 }
             } else if (node.groupUseNode) {
                 if (groupDeclaredMap[node.groupUse]) {
-                    key = quickGroupFnPrefix;
-                } else if (e.globalVars.indexOf(node.groupUse) == -1) {
-                    e.globalVars.push(node.groupUse);
+                    key = quickGroupObjectPrefix;
+                } else if (!globalVars.includes(node.groupUse)) {
+                    globalVars.push(node.groupUse);
                 }
                 key += node.groupUse;//`$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node`;
                 let refVar = key;
-                if (node.canHoisting) {
-                    // let skey = `$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node`;
-                    // if (!staticNodes[skey]) {
-                    //     staticNodes[skey] = skey;
-                    //     staticVars.push({
-                    //         key: skey
-                    //     });
-                    // }
-                    //console.log('enter', levelPrefix, skey);
-                    //snippets.push(`if(${skey}){\n${levelPrefix}.push(...${skey});\n}else{\n`);
-                }
+                //if (node.canHoisting) {
+                // let skey = `$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node`;
+                // if (!staticNodes[skey]) {
+                //     staticNodes[skey] = skey;
+                //     staticVars.push({
+                //         key: skey
+                //     });
+                // }
+                //console.log('enter', levelPrefix, skey);
+                //snippets.push(`if(${skey}){\n${levelPrefix}.push(...${skey});\n}else{\n`);
+                //}
                 if (node.groupContextNode) {
                     //key += '($id';
                     key += '?.(';
@@ -2102,19 +2136,31 @@ let process = (src, e) => {
                     //     }
                     // }
                     if (node.groupContext) {
-                        let splitContents = jsGeneric.splitParams(node.groupContext);
-                        for (let sc of splitContents) {
-                            if (isVarName(sc) &&
-                                !e.globalVars.includes(sc)) {
-                                e.globalVars.push(sc);
-                            }
+                        let info = tmplCmd.extractCmdContent(node.groupContext, cmds);
+                        let content;
+                        if (info.succeed) {
+                            content = info.content.trim();
+                            // if (content.startsWith('(') &&
+                            //     content.endsWith(')')) {
+                            //     content = content.slice(1, -1);
+                            // }
+                        } else {
+                            content = '';
+                            console.log(chalk.red('[MXC-Error(tmpl-quick)] process mx-slot use: ' + node.groupContext + ' failed'));
                         }
+                        // let splitContents = jsGeneric.splitParams(node.groupContext);
+                        // for (let sc of splitContents) {
+                        //     if (isVarName(sc) &&
+                        //         !e.globalVars.includes(sc)) {
+                        //         e.globalVars.push(sc);
+                        //     }
+                        // }
                         //key += ',' + node.groupContext;
-                        key += node.groupContext;
+                        key += content;
                     }
                     key += ')'
                     if (node.canHoisting) {
-                        refVar = `$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node`;
+                        refVar = `$quick_slot_${staticUniqueKey}_${utils.safeVar(node.groupUse)}_static_node`;
                     } else {
                         refVar = `$ref_${staticCounter++}_node`;
                     }
@@ -2141,11 +2187,13 @@ let process = (src, e) => {
                 }
                 snippets.push(`\r\n}else{\r\n`);
             }
+            // let isDynamicGroupSnippet = !node.canHoisting && node.groupKeyNode && !node.groupContextNode;
+            // let nextLevelPrefix = isDynamicGroupSnippet ? `$vnode` : vnodePrefix;
             if (node.children.length) {
                 if (node.staticValue &&
                     canGenerateHTML(node)) {
                     vnodeInited[level + 1] = 1;
-                    vnodeDeclares[`$vnode_${level + 1}`] = 1;
+                    vnodeDeclares[`${vnodePrefix}_${level + 1}`] = 1;
                     let exist = inlineStaticHTML[node.innerHTML];
                     let html = tmplCmd.getInnerHTML(node);
                     //html = tmplCmd.recover(html, cmds);
@@ -2165,8 +2213,9 @@ let process = (src, e) => {
                     snippets.push(`//#inline_static_html_node_ph_${exist.key};\r\n`);
 
                 } else {
+                    //let pfx = isDynamicGroupSnippet ? '$slot_vn' : '$vnode';
                     delete vnodeInited[level + 1];
-                    let declared = `$vnode_${level + 1}=[${utils.uId('\x00', src)}];`;
+                    let declared = `${vnodePrefix}_${level + 1}=[${utils.uId('\x00', src)}];`;
                     for (let e of node.children) {
                         if (e.hasCtrls ||
                             e.tag == tmplGroupTag) {
@@ -2184,7 +2233,7 @@ let process = (src, e) => {
 
                     if (usedParent[`n${level + 1}`] ||
                         usedParent[`d${level + 1}`]) {
-                        vnodeDeclares['$vnode_' + (level + 1)] = 1;
+                        vnodeDeclares[vnodePrefix + '_' + (level + 1)] = 1;
                     }
                     if (usedParent[`n${level + 1}`]) {
                         rebuildDeclared.push(declared);
@@ -2234,7 +2283,7 @@ let process = (src, e) => {
                 if (node.children.length &&
                     vnodeInited[level + 1]) {
                     let t = vnodeInited[level + 1];
-                    children = t === 1 ? `$vnode_${level + 1}` : t;
+                    children = t === 1 ? `${vnodePrefix}_${level + 1}` : t;
                 } else {
                     if (specialProps) {
                         if (node.unary) {
@@ -2275,14 +2324,14 @@ let process = (src, e) => {
                             //let src = `\r\n${prefix}=$vnode_${level + 1};`;
                             //snippets.push(src);
                             if (node.children.length) {
-                                snippets.push(`$quick_slot_${staticUniqueKey}_${node.groupKey}_static_node = $vnode_${level + 1};\n`);
+                                snippets.push(`$quick_slot_${staticUniqueKey}_${node.groupKey}_static_node = ${vnodePrefix}_${level + 1};\n`);
                                 snippets.push(`\n}\nreturn $quick_slot_${staticUniqueKey}_${node.groupKey}_static_node;\n`);
                                 if (configs.debug) {
                                     snippets.push(exTmpl);
                                 }
                             }
                         } else {
-                            snippets.push(`\nreturn $vnode_${level + 1};`);
+                            snippets.push(`\nreturn ${vnodePrefix}_${level + 1};`);
                             if (configs.debug) {
                                 snippets.push(exTmpl);
                             } else if (configs.tmplQuickWithTryCatch) {
@@ -2292,22 +2341,25 @@ let process = (src, e) => {
                         snippets.push(`};\n}\n`);
                     } else if (node.canHoisting) {
                         if (node.children.length) {
-                            snippets.push(`$slots.${node.groupKey}=$vnode_${level + 1};\n`);
+                            snippets.push(`$slots.${node.groupKey}=${vnodePrefix}_${level + 1};\n`);
                             snippets.push('}\n');
                         }
                     } else {
-                        snippets.push(`$slots.${node.groupKey}=$vnode_${level + 1};\n`);
+                        let locale = '$slot_local_' + staticCounter++;
+                        transformGlobalGroupToLocal[`$slots.${node.groupKey}`] = locale;
+                        vnodeDeclares[locale] = 1;
+                        snippets.push(`$slots.${node.groupKey}=${vnodePrefix}_${level + 1};\n`);
                     }
                 } else {
                     let prefix = (node.canHoisting || node.inlineStaticValue) ? `${key}=` : '', src = '';
                     if (node.groupUseNode) {
                         if (vnodeInited[level + 1] &&
                             node.children.length) {
-                            let prefix = '';
+                            let pfx = '';
                             if (node.canHoisting) {
-                                prefix = `$quick_slot_${staticUniqueKey}_${safeVar(node.groupUse)}_static_node=`;
+                                pfx = `$quick_slot_${staticUniqueKey}_${utils.safeVar(node.groupUse)}_static_node=`;
                             }
-                            src = `${levelPrefix}.push(...${prefix}$vnode_${level + 1});\n`;
+                            src = `${levelPrefix}.push(...${pfx}${vnodePrefix}_${level + 1});\n`;
                             snippets.push(src);
                         }
                         snippets.push(`}\n`);
@@ -2415,17 +2467,50 @@ let process = (src, e) => {
         let prefix = rd.substring(0, ei);
         innerCode = innerCode.replace(rd, prefix + '=[];');
     }
-    //console.log(innerCode);
-    //let hasGroupFunction = e.globalGroupKeys.length > 0;
-    //let hasGroupFunction = passedGroupRootRefs.length > 0;
 
-    if (e.globalVars &&
-        e.globalVars.length) {
+    if (configs.tmplSupportSlot) {
+        let recastLocale = [];
+        innerCode = innerCode.replace(slotReg, (_, v) => {
+            if (!groupDeclaredMap[v]) {
+                if (!globalVars.includes(v)) {
+                    globalVars.push(v);
+                }
+                return v;
+            }
+            let locale = transformGlobalGroupToLocal[_];
+            if (locale) {
+                if (!recastLocale.includes(locale)) {
+                    recastLocale.push(locale);
+                }
+                return locale;
+            }
+            specialStaticVars[`$host_slots_${v}`] = '';
+            return `$host_slots_${v}`;
+        });
+        for (let i = recastLocale.length; i--;) {
+            let rl = recastLocale[i];
+            let ri = innerCode.lastIndexOf(rl + '=$vnode_');
+            let nextSem = innerCode.indexOf(';', ri) + 1;
+            let assignment = innerCode.slice(ri, nextSem);
+            let vn = assignment.match(vnodeMathcer)[1];
+            let ai = innerCode.lastIndexOf(vn + '=', ri);
+            let before = innerCode.substring(0, ai);
+            let after = innerCode.substring(nextSem);
+            let part = innerCode.slice(ai, ri);
+            let reg = regexp.get(`${regexp.escape(vn)}([=\\.])`, 'g');
+            part = part.replace(reg, rl + '$1');
+            innerCode = before + part + after;
+        }
+    }
+
+    if (globalVars &&
+        globalVars.length) {
         let vars = ',\r\n{',
             out;
-        for (let key of e.globalVars) {
+        for (let key of globalVars) {
             if (key != '$viewId' &&
-                key != '$slots') {
+                key != '$slots' &&
+                !groupContextVars[key]) {
                 vars += `\r\n\t${key},`;
                 out = 1;
             }
@@ -2482,11 +2567,12 @@ let process = (src, e) => {
     for (let i = 0; i <= idx; i++) {
         params += ',' + tmplFnParams[i];
     }
+    let arrow = prefix ? '' : '=>';
     if (!configs.debug &&
         configs.tmplQuickWithTryCatch) {
-        source = `($logError,${tmplGlobalDataRoot}, $createVNode,$viewId${params})=> { \r\n${source} } `;
+        source = `($logError,${tmplGlobalDataRoot}, $createVNode,$viewId${params})${arrow} { \r\n${source} } `;
     } else {
-        source = `(${tmplGlobalDataRoot}, $createVNode,$viewId${params})=> { \r\n${source} } `;
+        source = `(${tmplGlobalDataRoot}, $createVNode,$viewId${params})${arrow} { \r\n${source} } `;
     }
     for (let i in staticObjects) {
         let v = staticObjects[i];
@@ -2499,43 +2585,12 @@ let process = (src, e) => {
             source = source.replace(v.key, regexp.encode(i));
         }
     }
-    // for (let slot in groupDeclaredMap) {
-    //     let slotReg = regexp.get(regexp.escape(`$slots.${slot}`), 'g');
-    //     console.log(slotReg);
-    //     source = source.replace(slotReg, _ => `$slots.${md5(_, e.shortHTMLFile + '@slots', '', false)}`);
-    //     console.log(source);
-    // }
-    if (configs.tmplSupportSlot) {
-        //if (configs.debug) {
-        // let t=0;
-        source = source.replace(slotReg, (_, v) => {
-            //specialStaticVars['$slots'] = '{}';
-            //console.log(_, v);
-            //return `$slots.a${t++}`;
-            //return _;
-            specialStaticVars[`$host_slots_${v}`] = '';
-            return `$host_slots_${v}`;
-        });
-        // } else {
-        //     source = source.replace(slotReg, (_, v) => {
-        //         //specialStaticVars['$slots'] = '{}';
-        //         return `$slots.${md5(v, e.shortHTMLFile + '@slots', '', false)}`;
-        //     });
-        // }
-    }
-    //console.log(specialStaticVars);
     for (let s in specialStaticVars) {
         staticVars.push({
             key: s,
             value: specialStaticVars[s]
         });
     }
-    // if (hasGroupFunction) {
-    //     staticVars.push({
-    //         key: `${staticUniqueKey}_groups`,
-    //         value: `{}`
-    //     });
-    // }
     return {
         source,
         statics: staticVars
