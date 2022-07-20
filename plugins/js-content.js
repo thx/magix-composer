@@ -23,7 +23,6 @@ let acorn = require('./js-acorn');
 let {
     revisableGReg,
     atViewPrefix,
-    revisableTail,
     selfCssRefReg } = require('./util-const');
 //let deps = require('./util-deps');
 //let httpProtocolReg = /^['"`]https?:/i;
@@ -237,10 +236,7 @@ let processContent = (from, to, content, inwatch) => {
             let raw = node.raw;
             node.raw = raw.replace(revisableGReg, m => {
                 add = true;
-                if (configs.debug) {
-                    return '@:{rs$' + m.slice(3, -1) + revisableTail + '}';
-                }
-                return md5(m, 'revisableString', configs.revisableStringPrefix);
+                return utils.getRSString(m);
             });
             raw = node.raw;
             if (moduleIdReg.test(raw)) {

@@ -224,8 +224,8 @@ module.exports = e => {
                                 cssNamesMap = Object.create(null);
                                 cssVarsMap = Object.create(null);
                                 //console.log('==',fileContent);
-                                fileContent = fileContent.replace(cssRefReg, (m, q, f, ext, selector) => {
-                                    let s = cssTransform.refProcessor(file, f, ext, selector, {
+                                fileContent = await asyncReplacer(fileContent, cssRefReg, async (m, q, f, ext, selector) => {
+                                    let s = await cssTransform.refProcessor(file, f, ext, selector, {
                                         globalCssNamesMap: globalNamesMap,
                                         globalCssDeclaredFiles: gInfo.declaredFiles
                                     }, m);
@@ -523,7 +523,7 @@ module.exports = e => {
                             let p = '\x12@:' + name + ext;
                             let returned = '';
                             for (let part of parts) {
-                                returned += p + ':' + part + ' ';
+                                returned += p + ':' + part.trim() + ' ';
                             }
                             returned = returned.slice(0, -1);
                             return [left, q, returned, q, right, tail].join('');

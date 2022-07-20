@@ -10,6 +10,7 @@ let cssChecker = require('./checker-css');
 let cssRead = require('./css-read');
 let cssComment = require('./css-comment');
 let cssHeader = require('./css-header');
+let asyncReplacer = require('./util-asyncr');
 let {
     cssRefReg
 } = require('./util-const');
@@ -44,7 +45,7 @@ let processScope = ctx => {
             });
         } else {
             //debugger;
-            let add = i => {
+            let add = async i => {
                 let currentFile = i.file;
                 let cssNamesKey = cssTransform.genCssNamesKey(configs.debug ? currentFile : 'scoped.style');
 
@@ -53,8 +54,8 @@ let processScope = ctx => {
                 if (i.exists && i.content) {
                     let header = cssHeader(i.content);
                     let c = cssComment.clean(i.content);
-                    c = c.replace(cssRefReg, (m, q, file, ext, selector) => {
-                        let s = cssTransform.refProcessor(i.file, file, ext, selector, {
+                    c = await asyncReplacer(c, cssRefReg, async (m, q, file, ext, selector) => {
+                        let s = await cssTransform.refProcessor(i.file, file, ext, selector, {
                             globalCssNamesMap: scopedCssNamesMap,
                             globalCssDeclaredFiles: scopedDeclaredInFiles
                         }, m);
@@ -112,9 +113,9 @@ let processScope = ctx => {
                 ext = path.extname(list[i]);
                 ps.push(cssRead(list[i], ctx.context, ''));
             }
-            Promise.all(ps).then(rs => {
+            Promise.all(ps).then(async rs => {
                 for (let i = 0; i < rs.length; i++) {
-                    add(rs[i]);
+                    await add(rs[i]);
                 }
                 for (let s of scopedStyles) {
                     scopedStyle += s.css;

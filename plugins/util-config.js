@@ -40,6 +40,7 @@ module.exports = {
     tmplSupportSlotFn: true,
     tmplBindExprSpliter: ':',
     tmplSanitizeMethiod: '$sanitize',
+    tmplTidyClassWithCmd: false,//压缩带模板命令的class属性
     selectorSilentErrorCss: true,//css选择器处理失败时，使用原有的选择器还是提示用户出错
     sourceMapCss: false,
     importCssSyntax: false,

@@ -357,7 +357,25 @@ let extractArtAndCtrlFrom = tmpl => {
     });
     return result;
 };
-
+let templatetLeftReg = /'\+/g;
+let templateRightReg = /\+'/g;
+let template = /`/g;
+let toTemplateString = input => {
+    input = input.replace(template, '')
+        .replace(templatetLeftReg, '${')
+        .replace(templateRightReg, '}');
+    if (input.startsWith(`'`)) {
+        input = input.substring(1);
+    } else {
+        input = '${' + input;
+    }
+    if (input.endsWith(`'`)) {
+        input = input.slice(0, -1);
+    } else {
+        input = input + '}';
+    }
+    return '`' + input + '`';
+};
 let toFn = (key, tmpl, fromAttr, e, inGroup) => {
     //tmpl = tmpl.replace(/%>\s+<%/g, '%><%');
     //console.log(tmpl);
@@ -412,7 +430,8 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
                 let key = content.substring(idx + 5);
                 content = content.substring(0, idx);
                 if (!inGroup) {
-                    content += ',' + key;
+                    //console.log(key);
+                    content += ',' + toTemplateString(key);
                     //console.log(content);
                 }
             }

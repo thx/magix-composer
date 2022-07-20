@@ -24,7 +24,6 @@ let {
     quickGroupObjectPrefix1,
     quickNeedHostAttr,
     quickContextRef,
-    revisableTail,
 } = require('./util-const');
 let regexp = require('./util-rcache');
 let qblance = require('./tmpl-qblance');
@@ -265,7 +264,7 @@ let PeelPatternVariable = (fn, node, htmlFile) => {
                         }
                         a.push(`${p.value.name}=${host}${key}`, spliter);
                     } else if (p.value.type == 'AssignmentPattern') {
-                        console.log(chalk.magenta('avoid use AssignmentPattern at ObjectPattern of ' + fn.slice(p.value.start, p.value.end) + ' at file:' + htmlFile));
+                        //console.log(chalk.magenta('[MXC Tip(tmpl-vars)] avoid use AssignmentPattern at ObjectPattern of ' + fn.slice(p.value.start, p.value.end) + ' at file:' + htmlFile));
                         let key;
                         if (p.computed) {
                             key = `[${p.key.name}]`;
@@ -291,7 +290,7 @@ let PeelPatternVariable = (fn, node, htmlFile) => {
                             }
                         }
                         let tv = utils.uId(PeelTempValuePrefix, fn, true);
-                        a.push(`${prefix}${tv}=${host}${key}${spliter}${left}=void 0===${tv}?${right}:${tv}`, spliter);
+                        a.push(`${prefix}${tv}=${host}${key}${spliter}${left}=${tv}??${right}`, spliter);
                         if (peelLeft) {
                             peel(v.left, left);
                         }
@@ -314,14 +313,14 @@ let PeelPatternVariable = (fn, node, htmlFile) => {
                         a.push(`${prefix}${k}=${host}[${idx}]`, spliter);
                         peel(p, k);
                     } else if (p.type == 'AssignmentPattern') {
-                        console.log(chalk.magenta('avoid use AssignmentPattern at ArrayPattern of ' + fn.slice(p.start, p.end) + ' at file:' + htmlFile));
+                        //console.log(chalk.magenta('[MXC Tip(tmpl-vars)] avoid use AssignmentPattern at ArrayPattern of ' + fn.slice(p.start, p.end) + ' at file:' + htmlFile));
                         let tv = utils.uId(PeelTempValuePrefix, fn, true);
                         let key = p.left.name;
                         let v = p.right.type == 'Literal' ? p.right.raw : p.right.name;
                         if (!v) {
                             v = fn.slice(p.right.start, p.right.end);
                         }
-                        a.push(`${prefix}${tv}=${host}[${idx}]${spliter}${key}=void 0===${tv}?${v}:${tv}`, spliter);
+                        a.push(`${prefix}${tv}=${host}[${idx}]${spliter}${key}=${tv}??${v}`, spliter);
                     } else if (p.type == 'RestElement') {
                         a.push(`${p.argument.name}=${host}.slice(${idx})`, spliter);
                     } else {
@@ -376,6 +375,7 @@ let PeelTemplateLiteral = (fn, node, htmlFile) => {
 };
 
 let translateEscapeSingleQuote = expr => {
+    //console.log(expr);
     let r = [],
         inStr = false,
         strStart = '',
@@ -429,6 +429,22 @@ let isLiteralValue = v => {
         return true;
     }
     return utils.isNumber(v);
+};
+
+let extractVarsFromParams = (params, sourceFile) => {
+    try {
+        let ast = acorn.parse(`((${params})=>{})`);
+        let vars = [];
+        acorn.walk(ast, {
+            VariablePattern(node) {
+                vars.push(node.name);
+            }
+        });
+        return vars;
+    } catch (ex) {
+        console.log(chalk.red('[MXC Error(tmpl-vars)] parse mx-slot params(' + params + ') error: ' + ex.message), 'at', chalk.magenta(sourceFile));
+        throw ex;
+    }
 };
 
 /*
@@ -782,10 +798,7 @@ module.exports = {
                 let key = '\x04' + (stringIndex++) + '\x04';
                 if (revisableReg.test(node.raw)) {
                     node.raw = node.raw.replace(revisableReg, m => {
-                        if (configs.debug) {
-                            return '@:{rs$' + m.slice(3, -1) + revisableTail + '}';
-                        }
-                        let r = '\x12' + md5(m, 'revisableString', configs.revisableStringPrefix);
+                        let r = '\x12' + utils.getRSString(m);
                         e.revisableStrings.push(r);
                         return r;
                     });
@@ -1258,6 +1271,7 @@ module.exports = {
                 } else {
                     keys.push(cmd);
                 }
+                //console.log(cmd,keys);
                 // if (!originIsArray &&
                 //     cmd.startsWith('[') &&
                 //     cmd.endsWith(']')) {
@@ -1313,14 +1327,15 @@ module.exports = {
                         //     ref == lastItem) {
                         //     ref = `'${md5(ref.slice(1, -1), 'compressRefExpr', '', true)}'`;
                         // }
-
+                        //console.log(ref);
                         if (autoGenerate.called ||
                             k.startsWith('"\x00') ||
                             !ks.includes(ref)) {
                             ks.push(ref);
                         }
                     }
-                    key = translateEscapeSingleQuote(ks.join('+\'.\'+').replace(/'\+'/g, ''));
+                    key = ks.join('+\'.\'+').replace(/'\+'/g, '');
+                    //key = translateEscapeSingleQuote();
                     if (!isAnalysePath) {
                         key = `'auto_key_` + key.substring(1);
                     }
@@ -1575,17 +1590,22 @@ module.exports = {
                             hasCtx = 1;
                             ctxVars = c;
                             if (c) {
-                                let ck = c.split(',');
-                                for (let k of ck) {
-                                    k = k.trim();
-                                    //处理 slot=2有默认值的情况
-                                    let ei = k.indexOf('=');
-                                    if (ei > 0) {
-                                        k = k.substring(0, ei).trim();
-                                    }
-                                    groupContextVars[k] = k;
-                                    ctxKeys.push(k);
+                                let vars = extractVarsFromParams(c, sourceFile);
+                                for (let v of vars) {
+                                    groupContextVars[v] = v;
+                                    ctxKeys.push(v);
                                 }
+                                // let ck = c.split(',');
+                                // for (let k of ck) {
+                                //     k = k.trim();
+                                //     //处理 slot=2有默认值的情况
+                                //     let ei = k.indexOf('=');
+                                //     if (ei > 0) {
+                                //         k = k.substring(0, ei).trim();
+                                //     }
+                                //     groupContextVars[k] = k;
+                                //     ctxKeys.push(k);
+                                // }
                             }
                         });
                         if (hasCtx &&
@@ -1598,6 +1618,7 @@ module.exports = {
                             }
                             let rootVarProcessor = _ => {
                                 let k = findRoot(_);
+                                //console.log(k, ctxKeys);
                                 if (k &&
                                     !ctxKeys.includes(k)) {
                                     if (k == '$slots') {

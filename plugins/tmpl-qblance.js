@@ -4,6 +4,8 @@ let {
     tmplGroupParentId,
 } = require('./util-const');
 let configs = require('./util-config');
+let md5 = require('./util-md5');
+
 let pureGroupReg = new RegExp(`<(\\/)?${tmplGroupTag}`, 'g');
 let pureNumberGroupReg = new RegExp(`<(\\/)?${tmplGroupTag}\\d+`, 'g');
 let hasGroupIdReg = new RegExp(`\\s${tmplGroupId}="\\d+_\\d+"`);

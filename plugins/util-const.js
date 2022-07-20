@@ -6,12 +6,6 @@ let hasCmdReg = /\x07\d+\x07/;
 //let spaceReg = /[ \n\f\r]+/;
 //let cspace = /\s+/g;
 let mxPrefix = 'mx5';
-let getRandomString = () => {
-    if (crypto.randomInt) {
-        crypto.randomInt(2 ** 47).toString(16);
-    }
-    return Math.random().toString(16).slice(2);
-};
 let reserveKeys = {
     'view': 1,//mx-view属性，用于渲染其它区块
     'vframe': 1,//mx-vframe属性，保留
@@ -62,7 +56,6 @@ module.exports = {
     microTmplCommand: /<%[\s\S]*?%>/g,
     revisableReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/,
     revisableGReg: /@:\{[a-zA-Z\.0-9\-\~#_&]+\}/g,
-    revisableTail: '$' + getRandomString(),
     selfCssRefReg: /@:(@keyframes|@font-face)?\(\.?([\w\-_:]+)\)/g,
     galleryFileNames: ['_config', 'config', 'cfg', '_cfg'],
     galleryFileSuffixes: ['mjs', 'js'],
@@ -83,6 +76,9 @@ module.exports = {
                 .replace(trimEndSemicolon, '')
                 .replace(trimSpaceAroundColon, ':');
         },//压缩css,如标签属性中的style
+        /**
+         * 不需要排序，开发时不需要，发布时因为已经变成规则的字符串了，排序意义不大
+         */
         // sortClassName(names) {
         //     if (!hasCmdReg.test(names)) {
         //         let xNames = names.split(spaceReg);
@@ -186,7 +182,7 @@ module.exports = {
     styleDependReg: /(?:\.css|\.less|\.mx|\.mmx|\.style)$/i,
     styleInJSFileReg: /(\(\s*)?(['"]?)\(?(ref|compiled)?\x12@:([\w\.\-\/\\]+?)(\.css|\.less|\.mx|\.mmx|\.style)(?::\.?([\w\-@$\(\)\{\},]+))?\)?\2(\s*\))?(;?)/g,
     styleInHTMLReg: /@:([~\w\.\-\/\\]+?)(\.css|\.less|\.mx|\.mmx|\.style):\.?([\w\-]+)/g,
-    cssRefReg: /\[(['"])\s*(?:ref)?\s*@\x12?:([\w\.\-\/\\]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):([\w\-]+)\1\]/g,
+    cssRefReg: /\[(?:ref\s*=\s*)?(['"])\s*(?:ref)?\s*@\x12?:([\w\.\-\/\\]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):([\w\-]+)\1\]/g,
     cssVarRefReg: /(['"])\s*(?:ref)?\s*@:([\w\.\-\/\\]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):(--[\w$\-_]+)\1/,
     isMxEvent(name) {
         if (name.startsWith('mx-')) {

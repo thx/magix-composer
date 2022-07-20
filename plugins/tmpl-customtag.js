@@ -12,7 +12,7 @@ let customConfig = require('./tmpl-customtag-cfg');
 let atpath = require('./util-atpath');
 let qblance = require('./tmpl-qblance');
 let regexp = require('./util-rcache');
-let md5 = require('./util-md5');
+//let md5 = require('./util-md5');
 // let generic = require('./js-generic');
 // let jsFileCache = require('./js-fcache');
 let {
@@ -73,7 +73,7 @@ let httpProtocolReg1 = /^https?:(?:[\/\\]{2})?/i;
 let classReg = /\s+\bclass\s*=\s*"([^"]+)"/g;
 let entities = {
     '>': '&gt;',
-    '<': '&lt;'
+    '<': '&lt;',
 };
 // let decodeEntities = {
 //     '&gt;': '>',
@@ -494,7 +494,8 @@ module.exports = {
         let processGalleryTag = async (n, map) => {
             let result = getTagInfo(n, map);
             let content = result.content;
-            let hasGallery = galleriesMap.hasOwnProperty(n.pfx + 'Root');
+            let hasGallery = galleriesMap.hasOwnProperty(n.pfx + 'Root') ||
+                galleriesMap.hasOwnProperty(n.pfx + 'Map');
             let gRoot = galleriesMap[n.pfx + 'Root'] || '';
             let gMap = galleriesMap[n.pfx + 'Map'] || (galleriesMap[n.pfx + 'Map'] = {});
             if (!uncheckTags.hasOwnProperty(result.tag)) {

@@ -1,3 +1,9 @@
+## 3.2.8
+1. 修正`tmpl-qbalance`未引入`md5`的`bug`
+2. 优化自动`key`的生成，使用模板字符串减少代码的生成
+3. `<mx-slot fn/>`支持默认值
+4. 支持`[ref="@:./path.css:name"]`写法
+
 ## 3.2.7
 1. 增加`mx-lazycreate`延迟`vframe`的创建
 2. 重构`<mx-slot fn/>`及`<mx-slot use/>`的使用方式

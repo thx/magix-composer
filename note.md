@@ -56,7 +56,7 @@
 2. `js`中引用`css3`中的变量`@:./path.css:--name`;
 3. `js`中引用`@`规则 `@:./path.css:@font-face(name) @:./path.css:@keyframes(name)`
 
-4. `css`中引用样式:`["ref@:./path.css:name"]{}`
+4. `css`中引用样式:`["ref@:./path.css:name"]{}`或[ref="@:./path.css:name"]
 5. `css`中引用其它`css`文件中的变量`color:var("ref@:./path.css:--name")`;
 6. `css`中引用其它`css`文件中的`@`规则`font-family:("ref@:./path.css:@font-face(name)")`,`animation-name:("ref@:./path.css:@keyframes(name)")`;
 

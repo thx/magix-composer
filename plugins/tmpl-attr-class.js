@@ -8,6 +8,7 @@ let classRef = require('./tmpl-attr-classref');
 let cssTransform = require('./css-transform');
 let configs = require('./util-config');
 let asyncReplacer = require('./util-asyncr');
+let tmplCmd = require('./tmpl-cmd');
 let utils = require('./util');
 let {
     styleInHTMLReg
@@ -22,6 +23,7 @@ let tmplCommandAnchorReg = /\x07\d+\x07/g;
 let tmplCmdReg = /<%([=#])?([\s\S]+?)%>/;
 let stringReg = /\x17([^\x17]*?)\x17/g;
 let attrReg = /(?:\x1c\d+\x1c)?([\w\-:\x1c]+)(?:=(["'])[\s\S]*?\2)?/g;
+let trimCmdSpaceReg = /\s*(\x07\d+\x07)(\s*)/g;
 module.exports = async (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
     let selectors = Object.create(null);
     let vars = Object.create(null);
@@ -97,7 +99,17 @@ module.exports = async (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
                 }
             });
         }
-        //console.log(c);
+        if (!configs.debug &&
+            configs.tmplTidyClassWithCmd) {
+            c = c.replace(trimCmdSpaceReg, (m, cmd, ts) => {
+                let x = tmplCmd.extractCmdContent(cmd, refTmplCommands);
+                if (x.succeed &&
+                    !x.operate) {
+                    return `${cmd}${ts ? ' ' : ''}`;
+                }
+                return m;
+            });
+        }
         c = c.replace(classNameReg, (m, h, key) => classResult(m, h, key));
         c = await asyncReplacer(c, styleInHTMLReg, async (m, fn, tail, selector) => {
             checkDuplicate(fn);
@@ -117,7 +129,7 @@ module.exports = async (tag, match, cssNamesMap, refTmplCommands, e, toSrc) => {
             return r;
         });
         //console.log(c);
-        return `class="${c}"`;
+        return `class=${q}${c}${q}`;
     };
     // let styleProcessor = m => {
     //     return m.replace(cssVarReg, (_, key) => {

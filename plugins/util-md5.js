@@ -4,7 +4,7 @@
 let configs = require('./util-config');
 let vkeys = '_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 let vkeysWidthNumbers = vkeys + '0123456789';
-let vkeysWithChars = vkeysWidthNumbers + '#!@$^*{}[]|,.`~/;:-+';
+let vkeysWithChars = vkeysWidthNumbers + '#!@$^*{}[]|,.~/;:-';
 let startWithNumReg = /^\d+/;
 let variable = (count, withChars, withNumbers) => { //压缩变量
     let result = '',

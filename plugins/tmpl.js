@@ -24,7 +24,7 @@ let tmplSource = require('./tmpl-tag-source');
 let asyncReplacer = require('./util-asyncr');
 let { revisableGReg,
     tmplGlobalDataRoot,
-    revisableTail } = require('./util-const');
+} = require('./util-const');
 let regexp = require('./util-rcache');
 
 let commentReg = /<!--[\s\S]*?-->/g;
@@ -138,10 +138,7 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
         //console.log(m);
         let src = tmplCmd.recover(m, refTmplCommands);
         tmplChecker.checkStringRevisable(m, src, e);
-        if (configs.debug) {
-            return '@:{rs$' + m.slice(3, -1) + revisableTail + '}';
-        }
-        let r = '\x12' + md5(m, 'revisableString', configs.revisableStringPrefix);
+        let r = '\x12' + utils.getRSString(m);
         e.revisableStrings.push(r);
         return r;
     });
@@ -150,7 +147,6 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
     //console.log(JSON.stringify(fileContent),refTmplCommands);
     fileContent = await tmplAttr.process(fileContent, e, refTmplCommands, cssNamesMap);
     //console.log(fileContent);
-
     try {
         //console.log(fileContent);
         fileContent = tmplCmd.tidy(fileContent);

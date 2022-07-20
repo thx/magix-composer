@@ -390,8 +390,8 @@ let refNameProcessor = async (relateFile, file, ext, name, e, origin) => {
     }
 };
 
-let refProcessor = (relateFile, file, ext, name, e, origin) => {
-    return `:global(.${refNameProcessor(relateFile, file, ext, name, e, origin)})`;
+let refProcessor = async (relateFile, file, ext, name, e, origin) => {
+    return `:global(.${await refNameProcessor(relateFile, file, ext, name, e, origin)})`;
 };
 
 let processVar = key => {
