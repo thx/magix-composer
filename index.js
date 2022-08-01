@@ -87,10 +87,11 @@ module.exports = {
     config(cfg) {
         if (cfg) {
             for (let p in cfg) {
-                if (p !== 'checker' &&
+                if (p != 'checker' &&
                     p != 'galleries' &&
                     p != 'components' &&
-                    p != 'revisableStringMap') {
+                    p != 'revisableStringMap' &&
+                    p != 'tmplSlotContextConstVars') {
                     configs[p] = cfg[p];
                 }
             }
@@ -102,11 +103,15 @@ module.exports = {
             });
             configs.scopedCssMap = scopedCssMap;
             let specials = [{
+                src: 'checker'
+            }, {
                 src: 'galleries'
             }, {
                 src: 'revisableStringMap'
             }, {
                 src: 'components'
+            }, {
+                src: 'tmplSlotContextConstVars'
             }];
             let merge = (aim, src) => {
                 if (utils.isObject(src)) {

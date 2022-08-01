@@ -20,6 +20,7 @@ let {
     tmplGroupTag,
     tmplGroupRootAttr,
     tmplGlobalVars,
+    tmplGroupHasOuterVariable,
     quickGroupObjectPrefix,
     quickGroupObjectPrefix1,
     quickNeedHostAttr,
@@ -813,6 +814,21 @@ module.exports = {
             }
         };
         let globalVars = Object.create(null);
+        let increseGlobalVars = k => {
+            if (!globalVars[k]) {
+                globalVars[k] = 0;
+            }
+            globalVars[k]++;
+        };
+        let decreaseGlobalVars = k => {
+            if (globalVars[k]) {
+                globalVars[k]--;
+                if (!globalVars[k]) {
+                    delete globalVars[k];
+                }
+            }
+        };
+        //console.log(fn);
         acorn.walk(ast, {
             Property(node) {
                 if (node.key.type == 'Literal') {
@@ -843,7 +859,7 @@ module.exports = {
                         end: node.end,
                         name: tname
                     });
-                    globalVars[tname] = 1;
+                    increseGlobalVars(tname);
                 } else {
                     modifiers.push({
                         key: vphUse + node.end,
@@ -860,7 +876,7 @@ module.exports = {
                     if (!r[lname]) {
                         //模板中使用如<%list=20%>这种，虽然可以，但是不建议使用，因为在模板中可以修改js中的数据，这是非常不推荐的
                         console.log(chalk.red('[MXC Tip(tmpl-vars)] undeclare variable:' + lname), 'at', chalk.gray(sourceFile));
-                        globalVars[lname] = 1;
+                        increseGlobalVars(lname);
                     } else {
                         let left = node.left;
                         modifiers.push({
@@ -877,17 +893,21 @@ module.exports = {
                     } //模板中使用如<%list.x=20%>这种
                     let r = queryVarsByPos(node.start);
                     if (!r[start.name]) {
-                        globalVars[start.name] = 1;
+                        increseGlobalVars(start.name);
                         console.log(chalk.red('[MXC Tip(tmpl-vars)] avoid writeback: ' + fn.slice(node.start, node.end)), 'at', chalk.gray(sourceFile));
                     }
                 }
             },
             VariableDeclarator(node) { //变量声明
                 let tname = node.id.name;
-                if (globalVars[tname] || globalVars[tname]) {
-                    let msg = '[MXC Error(tmpl-vars)] avoid redeclare variable:' + tname;
-                    console.log(chalk.red(msg), 'at', chalk.gray(sourceFile));
-                    //throw new Error(msg);
+                if (globalVars[tname]) {
+                    if (configs.tmplSupportSlotFn) {
+                        //delete globalVars[tname];
+                    } else {
+                        let msg = '[MXC Error(tmpl-vars)] avoid redeclare variable:' + tname;
+                        console.log(chalk.red(msg), 'at', chalk.gray(sourceFile));
+                        //throw new Error(msg);
+                    }
                 }
                 let r = queryRangeByPos(node.start);
                 if (r) {
@@ -1038,13 +1058,14 @@ module.exports = {
             if (!srcExpr) {
                 srcExpr = expr;
             }
+            //console.log(expr);
             if (!supportAnalyseExprReg.test(expr) &&
                 prefix) {
                 return [prefix()];
                 // let currentExpr = toOriginalExpr(expr.trim());
                 // let usedByExpr = toOriginalExpr(srcExpr.trim());
                 // console.log(chalk.magenta('[MXC Error(tmpl-vars)] can not resolve complex expression: ' + currentExpr + ' used by ' + usedByExpr), 'at', chalk.gray(sourceFile));
-                return [expr];
+                //return [expr];
             }
             let ps = jsGeneric.splitExpr(expr);//表达式拆分，如user[name][key[value]]=>["user","[name]","[key[value]"]
             //console.log(ps);
@@ -1102,7 +1123,7 @@ module.exports = {
                     } else if (one == '\x00') {
                         temp.push(`'+${expr}+'`);
                         if (configs.debug) {
-                            temp.push(tempVarsPrefixKey++);
+                            //temp.push(tempVarsPrefixKey++);
                         }
                     } else {
                         temp.push(escapeSQ(recoverString(one)));
@@ -1234,6 +1255,7 @@ module.exports = {
                 s = 'this';
             } else {
                 let expr = analyseExpr(v, src, prefix, isAnalysePath);
+                //console.log(expr, v);
                 s = expr.result;
             }
             return `'${s}'`.replace(tailEmptyReg, '');
@@ -1271,7 +1293,7 @@ module.exports = {
                 } else {
                     keys.push(cmd);
                 }
-                //console.log(cmd,keys);
+                //console.log(cmd, keys);
                 // if (!originIsArray &&
                 //     cmd.startsWith('[') &&
                 //     cmd.endsWith(']')) {
@@ -1318,6 +1340,7 @@ module.exports = {
                     for (let k of keys) {
                         autoGenerate.called = false;
                         let ref = processRefVariable(k, m, isAnalysePath || isUniquePath, autoGenerate);
+                        //console.log(ref, autoGenerate.called);
                         if (autoGenerate.called) {
                             canUse = false;
                             break;
@@ -1336,19 +1359,20 @@ module.exports = {
                     }
                     key = ks.join('+\'.\'+').replace(/'\+'/g, '');
                     //key = translateEscapeSingleQuote();
+                    //console.log(key);
                     if (!isAnalysePath) {
                         key = `'auto_key_` + key.substring(1);
                     }
                     if (!configs.debug &&
                         !isAnalysePath) {
                         let sKeys = jsGeneric.splitString(key);
-                        let rKeys = [];
+                        let rKeys = ['`'];
                         let i = 0,
                             max = sKeys.length - 1;
                         for (; i <= max; i++) {
                             let sk = sKeys[i];
                             if (sk.startsWith(`'`)) {
-                                rKeys.push(`'`);
+                                //rKeys.push(`'`);
                                 if ((i <= max
                                     && i > 0)) {
                                     rKeys.push('.');
@@ -1358,13 +1382,12 @@ module.exports = {
                                     i != max) {
                                     rKeys.push('.');
                                 }
-                                rKeys.push(`'`);
+                                // rKeys.push(`'`);
                             } else {
-                                rKeys.push(sk);
+                                rKeys.push(`\${${sk.slice(1, -1)}}`);
                             }
                         }
-                        key = rKeys.join('');
-                        //console.log(key);
+                        key = rKeys.join('') + '`';
                     }
                 }
                 if (!canUse) {
@@ -1375,42 +1398,22 @@ module.exports = {
                         key = `'analyse expr failed'`;
                     }
                 }
-                if (!isAnalysePath) {
-                    if (console.debug) {
-                        // key = key.slice(1, -1);
-                        // if (hasVar1.test(key) &&
-                        //     hasVar2.test(key)) {
-                        //key = `'\x1e'+$encodeUrl('${key}')`;
-                        if (configs.debug) {
-                            let sKeys = jsGeneric.splitString(key);
-                            let rKeys = [];
-                            let i = 0,
-                                max = sKeys.length - 1;
-                            for (; i <= max; i++) {
-                                let sk = sKeys[i];
-                                if (sk.startsWith(`'`)) {
-                                    rKeys.push(htmlAttrs.escapeKeyCharsURI(sk));
-                                } else {
-                                    rKeys.push(sk);
-                                }
-                            }
-                            key = rKeys.join('');
-                            //console.log(key);
+                if (!isAnalysePath &&
+                    configs.debug) {
+                    let sKeys = jsGeneric.splitString(key);
+                    let rKeys = ['`'];
+                    let i = 0,
+                        max = sKeys.length - 1;
+                    for (; i <= max; i++) {
+                        let sk = sKeys[i];
+                        if (sk.startsWith(`'`)) {
+                            rKeys.push(htmlAttrs.escapeKeyCharsURI(sk).slice(1, -1));
+                        } else {
+                            rKeys.push(`\${${sk.slice(1, -1)}}`);
                         }
-                        // } else {
-                        //     key = `'\x1e${htmlAttrs.escapeKeyCharsURI(key)}'`;
-                        // }
                     }
+                    key = rKeys.join('') + '`';
                 }
-                //console.log(key);
-                // if (canUse &&
-                //     configs.tmplSupportSlotFn &&
-                //     !isAnalysePath &&
-                //     !isUniquePath) {
-                //     key = key.trim();
-                //     let last = key.charAt(key.length - 1);
-                //     key = key.slice(0, -1) + '.' + shortHTMLUId + '.' + last + '+$id';
-                // }
                 key = key.replace(recastSlots, '$slots_');
                 return {
                     canUse,
@@ -1585,14 +1588,15 @@ module.exports = {
                         let ctxKeys = [],
                             keys = [],
                             hasCtx,
-                            ctxVars = '';
+                            ctxVars = '',
+                            hasOuterVar;
                         attrs.replace(groupContextReg, (m, c) => {
                             hasCtx = 1;
                             ctxVars = c;
                             if (c) {
                                 let vars = extractVarsFromParams(c, sourceFile);
                                 for (let v of vars) {
-                                    groupContextVars[v] = v;
+                                    //groupContextVars[v] = v;
                                     ctxKeys.push(v);
                                 }
                                 // let ck = c.split(',');
@@ -1608,8 +1612,7 @@ module.exports = {
                                 // }
                             }
                         });
-                        if (hasCtx &&
-                            configs.debug) {
+                        if (hasCtx) {
                             let m = attrs.match(groupKeyReg);
                             let gName = m[1];
                             gName = gName.substring(7);
@@ -1618,17 +1621,21 @@ module.exports = {
                             }
                             let rootVarProcessor = _ => {
                                 let k = findRoot(_);
-                                //console.log(k, ctxKeys);
+                                if (ctxKeys.includes(k)) {
+                                    decreaseGlobalVars(k);
+                                }
                                 if (k &&
                                     !ctxKeys.includes(k)) {
+                                    hasOuterVar = 1;
                                     if (k == '$slots') {
                                         k = '<mx-slot use/>';
                                     }
-                                    tip(k);
+                                    //tip(k);
                                 }
                             };
                             if (viewIdReg.test(content)) {
-                                tip('$viewId');
+                                hasOuterVar = 1;
+                                //tip('$viewId');
                             }
                             tmplCmd.updateCmdsOfTmpl(content, cmdStore, e => {
                                 e.replace(globalVariableReg, rootVarProcessor)
@@ -1656,7 +1663,7 @@ module.exports = {
                         });
                         //console.log(_, keys);
                         if (keys.length) {
-                            return `<${tmplGroupTag} ${tmplGroupRootAttr}="${keys.join(',')}"${attrs}>${content}</${tmplGroupTag}>`
+                            return `<${tmplGroupTag} ${tmplGroupRootAttr}="${keys.join(',')}" ${hasOuterVar ? tmplGroupHasOuterVariable : ''} ${attrs}>${content}</${tmplGroupTag}>`
                         }
                         return _;
                     }

@@ -28,11 +28,11 @@ let cleanHTML = (tmpl, store) => {
     tmpl = tmpl.replace(microTmplCommand, m => {
         return brPlaceholder(m, store);
     });
-    if (configs.tmplCommand) {
-        tmpl = tmpl.replace(configs.tmplCommand, m => {
-            return brPlaceholder(m, store);
-        });
-    }
+    // if (configs.tmplCommand) {
+    //     tmpl = tmpl.replace(configs.tmplCommand, m => {
+    //         return brPlaceholder(m, store);
+    //     });
+    // }
     return tmpl;
 };
 

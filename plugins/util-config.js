@@ -38,6 +38,11 @@ module.exports = {
     tmplQuickWithTryCatch: false,//是否生成quick模板时带try catch
     tmplSupportSlot: true,
     tmplSupportSlotFn: true,
+    tmplShortMX: false,
+    // tmplSlotContextConstVars: {
+    //     pkgName: 1,
+    //     galleryName: 1
+    // },
     tmplBindExprSpliter: ':',
     tmplSanitizeMethiod: '$sanitize',
     tmplTidyClassWithCmd: false,//压缩带模板命令的class属性

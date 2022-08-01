@@ -1,6 +1,6 @@
 {
   "name": "magix-composer",
-  "version": "3.2.7",
+  "version": "3.2.9",
   "description": "compile html, style and javascript files into javascript",
   "main": "index.js",
   "repository": {
@@ -16,7 +16,7 @@
     "offline"
   ],
   "dependencies": {
-    "acorn": "8.7.x",
+    "acorn": "8.8.x",
     "acorn-walk": "8.2.x",
     "autoprefixer": "10.4.x",
     "ansis": "1.4.x",

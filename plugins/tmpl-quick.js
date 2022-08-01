@@ -74,6 +74,7 @@ let {
     tmplCondPrefix,
     tmplGroupKeyAttr,
     tmplGroupUseAttr,
+    tmplGroupHasOuterVariable,
     tmplVarTempKey,
     quickSourceArt,
     tmplMxViewParamKey,
@@ -82,6 +83,7 @@ let {
     tmplTempInlineStaticKey,
     tmplGlobalDataRoot,
     mxPrefix,
+    tmplShortMX,
     quickNeedHostAttr
 } = require('./util-const');
 let utils = require('./util');
@@ -89,6 +91,7 @@ let regexp = require('./util-rcache');
 let attrMap = require('./html-attrs');
 let tmplUnescape = require('html-entities-decoder');
 let md5 = require('./util-md5');
+//let jsGeneric =require('./js-generic');
 //let isMethodReg = /^\s*[a-zA-Z0-9$_]+\([\s\S]+?\)\s*$/;
 let numString = /^'(-?[0-9]+(?:\.[0-9]+)?)'$/;
 let chalk = require('ansis');
@@ -97,15 +100,16 @@ let viewIdReg = /\x1f/g;
 let artCtrlReg = /(?:<%'(\d+)\x11([^\x11]+)\x11'%>)?<%([#=:&])?([\s\S]+?)%>/g;
 let inReg = /\(([\s\S]+?)\s*,\s*([^),]+),\s*([^),]+),\s*([^),]+),\s*(1|-1),\s*([a-zA-Z0-9\.\$\_]+)\)\s*in\s+([\S\s]+)/;
 let mathcer = /<%([#=*]|\.{3})?([\s\S]*?)%>|$/g;
-let escapeSlashRegExp = /\\|'/g;
+let escapeSlashRegExp = /[\\']/g;
 let unescapeBreakReg = /\\n/g;
-let suffixReg = /\+'';\s*/g;
-let endReg = /;\s*$/;
-let condPlus = /\+''\+/g;
+let tmplTagReusedKey = mxPrefix + '-key';
+//let suffixReg = /\+'';\s*/g;
+//let endReg = /;\s*$/;
+//let condPlus = /\+''\+/g;
 let tagHReg = /\x03\d+\x03/g;
 let tmplCommandAnchorReg = /\x07\d+\x07/g;
 let ifExtractReg = /^\s*(?:for|if)\s*\(([\s\S]+?)\)\s*;?\s*$/;
-let commaExprReg = /(?:,''\)|(%>'));/g;
+//let commaExprReg = /(?:,''\)|(%>'));/g;
 let directReg = /\{\{&[\s\S]+?\}\}/g;
 let spreadAttrsReg = /\{\{(?:\*|\.{3})[\s\S]+?\}\}/g;
 let condPrefix = /^\x1c\d+\x1c/;
@@ -121,27 +125,31 @@ let spanceAndSemicolonReg = /\s*;*\s*$/;
 let trimExtraElseReg = /else\s*\{\s*\}/g;
 let slotReg = /\$slots\.([a-zA-Z0-9$_]+)/g;
 let vnodeMathcer = /=(\$vnode_\d+)/;
-let quoteMap = {
-    '\t': '\\t',
-    '&#13;': '\\r',
-    '&#10;': '\\n',
-    '&#9;': '\\t',
-    '&#xd;': '\\r',
-    '&#xa;': '\\n',
-    '&#x9;': '\\t',
-    '&#34;': '\\"',
-    '&quot;': '\\"',
-    '&#x22;': '\\"',
-    '&#39;': '\\\'',
-    '&#x27;': '\\\'',
-    '&apos;': '\\\'',
-    '&#92;': '\\\\',
-    '&#x5c;': '\\\\'
-};
-let quoteReg = new RegExp('(?:' + Object.keys(quoteMap).join('|') + ')', 'g');
+//let singleTemplate = /`\$\{([^\{\}]+)\}`$/;
+// let quoteMap = {
+//     '\t': '\\t',
+//     '&#13;': '\\r',
+//     '&#10;': '\\n',
+//     '&#9;': '\\t',
+//     '&#xd;': '\\r',
+//     '&#xa;': '\\n',
+//     '&#x9;': '\\t',
+//     '&#34;': '\\"',
+//     '&quot;': '\\"',
+//     '&#x22;': '\\"',
+//     '&#39;': '\\\'',
+//     '&#x27;': '\\\'',
+//     '&apos;': '\\\'',
+//     '&#92;': '\\\\',
+//     '&#x5c;': '\\\\',
+//     '&#96;': '\\\\`',
+//     '&#x60;': '\\`'
+// };
+//let quoteReg = new RegExp('(?:' + Object.keys(quoteMap).join('|') + ')', 'g');
 //console.log(quoteReg);
-let quoteReplacer = m => quoteMap[m];
+//let quoteReplacer = m => quoteMap[m];
 let encodeSlashRegExp = s => s.replace(escapeSlashRegExp, '\\$&');
+
 let dquoteReg = /"/g;
 let encodeDQuote = str => str.replace(dquoteReg, '&#34;');
 let storeInnerMatchedTags = (tmpl, store) => {
@@ -357,25 +365,223 @@ let extractArtAndCtrlFrom = tmpl => {
     });
     return result;
 };
-let templatetLeftReg = /'\+/g;
-let templateRightReg = /\+'/g;
-let template = /`/g;
-let toTemplateString = input => {
-    input = input.replace(template, '')
-        .replace(templatetLeftReg, '${')
-        .replace(templateRightReg, '}');
-    if (input.startsWith(`'`)) {
-        input = input.substring(1);
-    } else {
-        input = '${' + input;
-    }
-    if (input.endsWith(`'`)) {
-        input = input.slice(0, -1);
-    } else {
-        input = input + '}';
-    }
-    return '`' + input + '`';
-};
+// let templatetLeftReg = /'\+/g;
+// let templateRightReg = /\+'/g;
+// let template = /`/g;
+// let toTemplateString = input => {
+//     console.log(input,jsGeneric.splitString(input));
+//     if (input.includes(`'+`) ||
+//         input.includes(`+'`)) {
+//         input = input.replace(template, '')
+//             .replace(templatetLeftReg, '${')
+//             .replace(templateRightReg, '}');
+//         if (input.startsWith(`'`)) {
+//             input = input.substring(1);
+//         } else {
+//             input = '${' + input;
+//         }
+//         if (input.endsWith(`'`)) {
+//             input = input.slice(0, -1);
+//         } else {
+//             input = input + '}';
+//         }
+//         return '`' + input + '`';
+//     }
+//     return input;
+// };
+// let toFn1 = (key, tmpl, fromAttr, e, inGroup) => {
+//     //tmpl = tmpl.replace(/%>\s+<%/g, '%><%');
+//     //console.log(tmpl);
+//     let index = 0,
+//         hasCtrl = false,
+//         hasOut = false,
+//         hasCmdOut = false,
+//         source = `${key}='`,
+//         snippet,
+//         preArt = -1,
+//         ctrlCount = 0,
+//         hasSnippet = false,
+//         hasCharSnippet = false,
+//         setStart = false,
+//         hasVarOut = false,
+//         reg = regexp.get(`${regexp.escape(key)}\\+='';+`, 'g');
+//     tmpl.replace(mathcer, (match, operate, content, offset) => {
+//         snippet = attrMap.escapeSlashAndBreak(tmpl.substring(index, offset));
+//         if (snippet) {
+//             hasSnippet = hasSnippet || !content || !setStart;
+//             hasCharSnippet = hasCharSnippet || !!snippet.trim();
+//             hasOut = true;
+//             if (preArt == index) {
+//                 source += `'')+'`;
+//             }
+//         }
+//         setStart = true;
+//         //if (decode) {
+//         //console.log(snippet, JSON.stringify(snippet));
+//         snippet = tmplUnescape(snippet.replace(quoteReg, quoteReplacer));
+//         //console.log(snippet);
+//         //}
+//         source += snippet;
+//         index = offset + match.length;
+//         let ctrl = tmpl.substring(index - match.length + 2 + (operate ? operate.length : 0), index - 2);
+//         let artReg = /^'(\d+)\x11([^\x11]+)\x11'$/;
+//         let artMatch = ctrl.match(artReg);
+//         let art = '', line = -1;
+//         ctrl = attrMap.escapeSlashAndBreak(ctrl);
+//         if (artMatch) {
+//             ctrl = '';
+//             art = artMatch[2];
+//             line = artMatch[1];
+//         }
+//         if (operate == '@' ||
+//             operate == '#') {
+//             hasOut = true;
+//             hasCmdOut = true;
+//             hasVarOut = true;
+//             let idx = content.indexOf(',\x00xl\x00');
+//             if (idx > -1) {
+//                 let autoKey = content.substring(idx + 5);
+//                 content = content.substring(0, idx);
+//                 if (!inGroup) {
+//                     //console.log(key);
+//                     content += ',' + toTemplateString(key);
+//                     //console.log(content);
+//                 }
+//             }
+//             idx = ctrl.indexOf(',\x00xl\x00');
+//             if (idx > -1) {
+//                 let autoKey = ctrl.substring(idx + 5)
+//                 ctrl = ctrl.substring(0, idx);
+//                 if (!inGroup) {
+//                     ctrl += ',' + autoKey;
+//                 }
+//             }
+//             //console.log(JSON.stringify([ctrl, content]));
+//             //console.log(JSON.stringify(content));
+//             //let a = tmplCmd.extractRefContent(content);
+//             //console.log(a);
+//             //let out = `($refData[${a.key}]=${a.vars},${a.key})`;
+//             //console.log(content);
+//             let out = `$keyOf($refData,${content})`;
+//             if (configs.debug) {
+//                 if (preArt == offset) {
+//                     source += `$__ctrl='<%${operate}${ctrl}%>',${out})+'`;
+//                 } else {
+//                     source += `'+($__ctrl='<%${operate}${ctrl}%>',${out})+'`;
+//                 }
+//             } else {
+//                 source += `'+${out}+'`;
+//             }
+//         } else if (operate == '=') {
+//             hasOut = true;
+//             hasCmdOut = true;
+//             hasVarOut = true;
+//             let safe = ``;
+//             // if ((!content.startsWith('$encodeQuote(') &&
+//             //     !content.startsWith('$keyOf(') &&
+//             //     !content.startsWith('$encodeUrl(') &&
+//             //     !content.startsWith('$nullCheck(')) &&
+//             //     content != '$viewId' &&
+//             //     !isMethodReg.test(content)) {
+//             //     safe = '$nullCheck';
+//             // }
+//             if (content.startsWith(e.uniqueId)) {
+//                 content = content.replace(e.uniqueId, '');
+//                 safe = '';
+//             }
+//             if (ctrl.startsWith(e.uniqueId)) {
+//                 ctrl = ctrl.replace(e.uniqueId, '');
+//             }
+
+//             let out = `${safe}(${content})`;
+//             if (configs.debug) {
+//                 if (preArt == offset) {
+//                     source += `$__ctrl='<%=${ctrl}%>',${out})+'`;
+//                 } else {
+//                     source += `'+($__ctrl='<%=${ctrl}%>',${out})+'`;
+//                 }
+//             } else {
+//                 source += `'+${out}+'`;
+//             }
+//         } else if (operate == '*' ||
+//             operate == '...') {
+//             hasOut = true;
+//             hasCmdOut = true;
+//             hasVarOut = true;
+//             if (configs.debug) {
+//                 if (preArt == offset) {
+//                     source += `$__ctrl='<%${operate}${ctrl}%>',${content})+'`;
+//                 } else {
+//                     source += `'+($__ctrl='<%${operate}${ctrl}%>',${content})+'`;
+//                 }
+//             } else {
+//                 source += `'+${content}+'`;
+//             }
+//         } else if (content) {
+//             if (line > -1) {
+//                 //hasCtrl = false;//调试中的原始行号和原始语句不作为控制语句
+//                 preArt = index;
+//                 hasVarOut = true;
+//                 source += `'+($__line=${line},$__art='{{${art}}}',`;
+//             } else {
+//                 hasCtrl = true;
+//                 ctrlCount++;
+//                 if (preArt == offset) {
+//                     source += `'')+'`;
+//                 }
+//                 source += `';`;
+//                 if (configs.debug) {
+//                     source += `$__ctrl='<%${ctrl}%>';`;
+//                 }
+//                 source += `${content};${key}+='`;
+//             }
+//         }
+//         return match;
+//     });
+//     source += `';`;
+//     source = source
+//         .replace(viewIdReg, `'+$viewId+'`)
+//         .replace(reg, '');
+//     reg = regexp.get(`^${regexp.escape(key)}=''\\+`);
+//     source = source
+//         .replace(reg, regexp.encode(key + '='))
+//         .replace(suffixReg, ';')
+//         .replace(condPlus, '+')
+//         .replace(endReg, '');
+//     if (configs.debug &&
+//         fromAttr &&
+//         !hasOut &&
+//         ctrlCount == 1) {
+//         source = source.replace(commaExprReg, '$1,') + ')';
+//     }
+//     if (ctrlCount > 1
+//         && !hasOut) {//如果超出1条控制语句，即使没有输出，也要认为有输出
+//         hasOut = true;
+//     }
+//     let trimmedPrefix = false;
+//     if (!hasOut ||
+//         !hasCtrl) {
+//         reg = regexp.get(`^${regexp.escape(key)}=(?:'';+)?`);
+//         source = source.replace(reg, '');
+//         trimmedPrefix = true;
+//     }
+//     //console.log(source,key,tmpl);
+//     //console.log(source, hasOut, hasSnippet, hasCharSnippet);
+//     return {
+//         source,
+//         hasOut,
+//         trimmedPrefix,
+//         hasSnippet,
+//         hasCharSnippet,
+//         hasVarOut,
+//         hasCmdOut,
+//         hasCtrl
+//     };
+// };
+let VAR = 1,
+    STRING = 2,
+    CTRL = 4,
+    PARTIAL = 8;
 let toFn = (key, tmpl, fromAttr, e, inGroup) => {
     //tmpl = tmpl.replace(/%>\s+<%/g, '%><%');
     //console.log(tmpl);
@@ -383,7 +589,6 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         hasCtrl = false,
         hasOut = false,
         hasCmdOut = false,
-        source = `${key}='`,
         snippet,
         preArt = -1,
         ctrlCount = 0,
@@ -392,23 +597,41 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         setStart = false,
         hasVarOut = false,
         reg = regexp.get(`${regexp.escape(key)}\\+='';+`, 'g');
+    let outputs = [];
+    let partials = [];
+    let part = '';
     tmpl.replace(mathcer, (match, operate, content, offset) => {
-        snippet = attrMap.escapeSlashAndBreak(tmpl.substring(index, offset));
+        snippet = tmplUnescape(tmpl.substring(index, offset));
+        snippet = attrMap.escapeSlashAndBreak(snippet);
         if (snippet) {
             hasSnippet = hasSnippet || !content || !setStart;
             hasCharSnippet = hasCharSnippet || !!snippet.trim();
-            hasOut = true;
             if (preArt == index) {
-                source += `'')+'`;
+                partials.push({
+                    type: VAR,
+                    content: part + `'')`
+                });
+                part = '';
+            }
+            let ss = snippet.split(viewIdReg);
+            let passed;
+            for (let s of ss) {
+                if (passed) {
+                    partials.push({
+                        type: VAR,
+                        content: '$viewId'
+                    });
+                }
+                if (s) {
+                    partials.push({
+                        type: STRING,
+                        content: s
+                    });
+                }
+                passed = 1;
             }
         }
         setStart = true;
-        //if (decode) {
-        //console.log(snippet, JSON.stringify(snippet));
-        snippet = tmplUnescape(snippet.replace(quoteReg, quoteReplacer));
-        //console.log(snippet);
-        //}
-        source += snippet;
         index = offset + match.length;
         let ctrl = tmpl.substring(index - match.length + 2 + (operate ? operate.length : 0), index - 2);
         let artReg = /^'(\d+)\x11([^\x11]+)\x11'$/;
@@ -422,56 +645,44 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         }
         if (operate == '@' ||
             operate == '#') {
-            hasOut = true;
-            hasCmdOut = true;
-            hasVarOut = true;
             let idx = content.indexOf(',\x00xl\x00');
             if (idx > -1) {
-                let key = content.substring(idx + 5);
+                let autoKey = content.substring(idx + 5);
                 content = content.substring(0, idx);
                 if (!inGroup) {
-                    //console.log(key);
-                    content += ',' + toTemplateString(key);
-                    //console.log(content);
+                    content += ',' + autoKey; //toTemplateString(autoKey);
                 }
             }
             idx = ctrl.indexOf(',\x00xl\x00');
             if (idx > -1) {
-                let key = ctrl.substring(idx + 5)
+                let autoKey = ctrl.substring(idx + 5)
                 ctrl = ctrl.substring(0, idx);
                 if (!inGroup) {
-                    ctrl += ',' + key;
+                    ctrl += ',' + autoKey;
                 }
             }
-            //console.log(JSON.stringify([ctrl, content]));
-            //console.log(JSON.stringify(content));
-            //let a = tmplCmd.extractRefContent(content);
-            //console.log(a);
-            //let out = `($refData[${a.key}]=${a.vars},${a.key})`;
-            //console.log(content);
             let out = `$keyOf($refData,${content})`;
             if (configs.debug) {
                 if (preArt == offset) {
-                    source += `$__ctrl='<%${operate}${ctrl}%>',${out})+'`;
+                    partials.push({
+                        type: VAR,
+                        content: part + `$__ctrl='<%${operate}${ctrl}%>',${out})`
+                    });
+                    part = '';
                 } else {
-                    source += `'+($__ctrl='<%${operate}${ctrl}%>',${out})+'`;
+                    partials.push({
+                        content: `($__ctrl='<%${operate}${ctrl}%>',${out})`,
+                        type: VAR
+                    });
                 }
             } else {
-                source += `'+${out}+'`;
+                partials.push({
+                    content: out,
+                    type: VAR
+                });
             }
         } else if (operate == '=') {
-            hasOut = true;
-            hasCmdOut = true;
-            hasVarOut = true;
             let safe = ``;
-            // if ((!content.startsWith('$encodeQuote(') &&
-            //     !content.startsWith('$keyOf(') &&
-            //     !content.startsWith('$encodeUrl(') &&
-            //     !content.startsWith('$nullCheck(')) &&
-            //     content != '$viewId' &&
-            //     !isMethodReg.test(content)) {
-            //     safe = '$nullCheck';
-            // }
             if (content.startsWith(e.uniqueId)) {
                 content = content.replace(e.uniqueId, '');
                 safe = '';
@@ -479,81 +690,199 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
             if (ctrl.startsWith(e.uniqueId)) {
                 ctrl = ctrl.replace(e.uniqueId, '');
             }
-
             let out = `${safe}(${content})`;
             if (configs.debug) {
                 if (preArt == offset) {
-                    source += `$__ctrl='<%=${ctrl}%>',${out})+'`;
+                    partials.push({
+                        content: part + `$__ctrl='<%=${ctrl}%>',${out})`,
+                        type: VAR
+                    });
+                    part = '';
                 } else {
-                    source += `'+($__ctrl='<%=${ctrl}%>',${out})+'`;
+                    partials.push({
+                        content: `($__ctrl='<%=${ctrl}%>',${out})`,
+                        type: VAR
+                    });
                 }
             } else {
-                source += `'+${out}+'`;
+                partials.push({
+                    content: out,
+                    type: VAR
+                });
             }
         } else if (operate == '*' ||
             operate == '...') {
-            hasOut = true;
-            hasCmdOut = true;
-            hasVarOut = true;
             if (configs.debug) {
                 if (preArt == offset) {
-                    source += `$__ctrl='<%${operate}${ctrl}%>',${content})+'`;
+                    partials.push({
+                        content: part + `$__ctrl='<%${operate}${ctrl}%>',${content})`,
+                        type: VAR
+                    });
+                    part = '';
                 } else {
-                    source += `'+($__ctrl='<%${operate}${ctrl}%>',${content})+'`;
+                    partials.push({
+                        content: `($__ctrl='<%${operate}${ctrl}%>',${content})`,
+                        type: VAR
+                    });
                 }
             } else {
-                source += `'+${content}+'`;
+                partials.push({
+                    content,
+                    type: VAR
+                });
             }
         } else if (content) {
             if (line > -1) {
                 //hasCtrl = false;//调试中的原始行号和原始语句不作为控制语句
                 preArt = index;
-                hasVarOut = true;
-                //console.log(art);
-                source += `'+($__line=${line},$__art='{{${art}}}',`;
+                part = `($__line=${line},$__art='{{${art}}}',`;
             } else {
-                hasCtrl = true;
-                ctrlCount++;
+                if (partials.length) {
+                    outputs.push({
+                        type: PARTIAL,
+                        subs: partials
+                    });
+                    partials = [];
+                }
                 if (preArt == offset) {
-                    source += `'')+'`;
+                    outputs.push({
+                        type: CTRL,
+                        content: part + `'')`
+                    });
+                    part = '';
                 }
-                source += `';`;
                 if (configs.debug) {
-                    source += `$__ctrl='<%${ctrl}%>';`;
+                    outputs.push({
+                        type: CTRL,
+                        content: `$__ctrl='<%${ctrl}%>'`
+                    });
                 }
-                source += `${content};${key}+='`;
+                outputs.push({
+                    type: CTRL,
+                    content,
+                });
             }
         }
         return match;
     });
-    source += `';`;
-    source = source
-        .replace(viewIdReg, `'+$viewId+'`)
-        .replace(reg, '');
-    reg = regexp.get(`^${regexp.escape(key)}=''\\+`);
-    source = source
-        .replace(reg, regexp.encode(key + '='))
-        .replace(suffixReg, ';')
-        .replace(condPlus, '+')
-        .replace(endReg, '');
-    if (configs.debug &&
-        fromAttr &&
-        !hasOut &&
-        ctrlCount == 1) {
-        source = source.replace(commaExprReg, '$1,') + ')';
+    if (partials.length) {
+        outputs.push({
+            type: PARTIAL,
+            subs: partials
+        });
     }
-    if (ctrlCount > 1
-        && !hasOut) {//如果超出1条控制语句，即使没有输出，也要认为有输出
+    let source = '';
+    let ctrlOut,
+        subsOut,
+        position = 0;
+    for (let one of outputs) {
+        if (one.type == PARTIAL) {
+            if (!subsOut) {
+                subsOut = ++position;
+            }
+            if (ctrlOut) {
+                source += `;${key}+=`;
+            } else {
+                source += `${key}=`;
+            }
+            let f = 0,
+                index = 0,
+                stringClosedAt;
+            for (let s of one.subs) {
+                hasOut = true;
+                f |= s.type;
+                if (s.type == STRING) {
+                    stringClosedAt = index;
+                } else {
+                    hasCmdOut = true;
+                    hasVarOut = true;
+                }
+                index++;
+            }
+            if (f == STRING) {
+                source += '`';
+                for (let s of one.subs) {
+                    source += s.content;
+                }
+                source += '`';
+            } else if (f == VAR) {
+                let append;
+                for (let s of one.subs) {
+                    if (append) {
+                        source += '+';
+                    }
+                    source += s.content;
+                    append = 1;
+                }
+            } else {
+                index = 0;
+                let stringOpened,
+                    varAppend;
+                for (let s of one.subs) {
+                    if (s.type == STRING) {
+                        if (!stringOpened) {
+                            if (varAppend) {
+                                source += '+';
+                            }
+                            source += '`';
+                            stringOpened = 1;
+                        }
+                        source += s.content;
+                    } else {
+                        if (index > stringClosedAt) {
+                            source += `+${s.content}`;
+                        } else if (!stringOpened) {
+                            if (varAppend) {
+                                source += `+`;
+                            }
+                            source += s.content;
+                            varAppend = 1;
+                        } else {
+                            source += `\${${s.content}\}`;
+                        }
+                    }
+                    if (index == stringClosedAt) {
+                        source += '`';
+                    }
+                    index++;
+                }
+            }
+        } else {
+            ctrlCount++;
+            hasCtrl = true;
+            if (!ctrlOut) {
+                ctrlOut = ++position;
+            }
+            if (source) {
+                source += ';';
+            }
+            source += one.content;
+        }
+    }
+    if (ctrlOut <
+        subsOut) {
+        source = `${key}=\`\`;${source}`;
+    }
+    //console.log(source);
+    //source = source.replace(singleTemplate, '$1');
+    //console.log(source);
+    // if (configs.debug &&
+    //     fromAttr &&
+    //     !hasOut &&
+    //     ctrlCount == 1) {
+    //     source = source.replace(commaExprReg, '$1,') + ')';
+    // }
+    if (ctrlCount > 1 &&
+        !hasOut) {//如果超出1条控制语句，即使没有输出，也要认为有输出
         hasOut = true;
     }
     let trimmedPrefix = false;
     if (!hasOut ||
         !hasCtrl) {
-        reg = regexp.get(`^${regexp.escape(key)}=(?:'';+)?`);
+        reg = regexp.get(`^${regexp.escape(key)}=`);
         source = source.replace(reg, '');
         trimmedPrefix = true;
     }
-    //console.log(source,key,tmpl);
     return {
         source,
         hasOut,
@@ -776,15 +1105,6 @@ let parser = (tmpl, e) => {
                     token.needHost = true;
                 } else if (a.name == tmplTempInlineStaticKey) {
                     token.inlineStaticValue = a.value;
-                } else if (a.name == 'mx-html' ||
-                    a.name == 'x-html' ||
-                    a.name == mxPrefix + '-html' ||
-                    a.name == 'mx-safe-html' ||
-                    a.name == mxPrefix + '-safe-html') {
-                    token.xHTML = a.value;
-                    token.hasXHTML = true;
-                    token.isSafe = a.name == 'mx-safe-html' ||
-                        a.name == mxPrefix + '-safe-html';
                 } else if (a.name == 'mx-lazycreate' ||
                     a.name == mxPrefix + '-lazycreate') {
                     token.lazyCreate = true;
@@ -818,14 +1138,13 @@ let parser = (tmpl, e) => {
                     a.name == 'params') {
                     token.groupContextNode = tag == tmplGroupTag;
                     token.groupContext = a.value || '';
-                }/* else if (a.name == 'unique') {
-                    token.groupUniqueContent = a.value;
-                }*/ else if (a.name == tmplGroupRootAttr) {
+                } else if (a.name == tmplGroupHasOuterVariable) {
+                    token.groupContextHasOuterVar = true;
+                } else if (a.name == tmplGroupRootAttr) {
                     token.groupRootRefs = a.value;
                 } else if (a.name != quickDeclareAttr &&
                     a.name != quickOpenAttr &&
                     !a.name.startsWith(tmplCondPrefix)) {
-                    //console.log(a.name);
                     let ignoreAttr = false;
                     if (a.name == 'type' &&
                         !a.unary &&
@@ -837,37 +1156,6 @@ let parser = (tmpl, e) => {
                             cond = m;
                             return '';
                         });
-                        if (a.name == 'mx-updateby') {
-                            token.updateByKeys = a.value;
-                            ignoreAttr = true;
-                        } else if (a.name == 'mx-bindexpr') {
-                            token.customBindExpr = true;
-                        } else if (a.name == 'mx-bindto' ||
-                            a.name == 'mx-bindfrom' ||
-                            a.name == 'mx-syncto' ||
-                            a.name == 'mx-syncfrom') {
-                            token.customHost = true;
-                        } else if (a.name == 'mx-syncexpr') {
-                            token.customBindExpr = true;
-                        } else if (a.name == 'mx-forexpr' ||
-                            a.name == 'mx-forbind') {
-                            token.customBindForExpr = true;
-                        } else if (a.name == 'mx-owner') {
-                            token.hasMxOwner = true;
-                        } else if (a.name == 'mx-host' ||
-                            a.name == mxPrefix + 'host') {
-                            token.bindHost = true;
-                        } else if (a.name == 'mx-view' ||
-                            a.name == 'mx5-view') {
-                            token.isMxView = true;
-                        } else if ((a.name.startsWith('mx-') ||
-                            a.name.startsWith(mxPrefix)) &&
-                            a.value.startsWith('\x1f')) {
-                            let i = a.name.indexOf('-');
-                            let e = a.name.substring(i + 1);
-                            token.hasMagixEvent = true;
-                            token.magixEvents[e] = 1;
-                        }
                         let oCond = attrsMap[`${tmplCondPrefix}${cond}`];
                         let extract = tmplCmd.extractCmdContent(oCond, cmds);
                         let isRef = extract.operate == '#';
@@ -890,81 +1178,83 @@ let parser = (tmpl, e) => {
                             origin: extract.origin
                         };
                         a.cond = composer;
-                        if (a.name == 'x-html' ||
-                            a.name == 'inner-html' ||
-                            a.name == 'mx-html' ||
-                            a.name == mxPrefix + '-html' ||
-                            a.name == 'mx-safe-html' ||
-                            a.name == mxPrefix + '-safe-html') {
-                            token.hasXHTML = true;
-                            token.cond = composer;
-                            token.isSafe = a.name == 'mx-safe-html' ||
-                                a.name == mxPrefix + '-safe-html';
-                            ignoreAttr = true;
-                        } else if (a.name == 'mx-key' ||
-                            a.name == mxPrefix + '-key') {
-                            ignoreAttr = true;
-                            token.mxKeyAttr = a;
-                        }
-                    } else if (!a.unary) {
-                        tmplCommandAnchorReg.lastIndex = 0;
-                        if (tmplCommandAnchorReg.test(a.name)) {
-                            let src = tmplCmd.recover(a.name, cmds);
-                            let { line, art } = artExpr.extractCmdToArt(src);
-                            console.log(chalk.red(`[MXC-Error(tmpl-quick)] unsupport attr: ${art} at line ${line} at file: ${e.shortHTMLFile}`));
-                            continue;
-                        }
-                        tmplCommandAnchorReg.lastIndex = 0;
-                        if (a.name == 'mx-ctrl' ||
-                            a.name == mxPrefix + 'ctrl') {
-                            token.syncFromUI = true;
-                        } else if (a.name == 'mx-updateby') {
-                            token.updateByKeys = a.value;
-                            ignoreAttr = true;
-                        } else if (a.value.startsWith('\x07')) {
-                            a.value = a.value.replace(condEscapeReg, '$1?');
-                        } else if (a.value.includes('\x1f')) {
-                            token.attrHasDynamicViewId = true;
-                            token.canHoisting = false;
-                        }
-                        if (a.name == 'mx-owner') {
-                            token.hasMxOwner = true;
-                        } else if (a.name == 'mx-bindexpr') {
-                            token.customBindExpr = true;
-                        } else if (a.name == 'mx-bindto' ||
-                            a.name == 'mx-bindfrom' ||
-                            a.name == 'mx-syncfrom' ||
-                            a.name == 'mx-syncto') {
-                            token.customHost = true;
-                        } else if (a.name == 'mx-syncexpr') {
-                            token.customBindExpr = true;
-                        } else if (a.name == 'mx-forexpr' ||
-                            a.name == 'mx-forbind') {
-                            token.customBindForExpr = true;
-                        } else if (a.name == 'mx-host' ||
-                            a.name == mxPrefix + 'host') {
-                            token.bindHost = true;
-                        } else if (a.name == 'mx-view' ||
-                            a.name == 'mx5-view') {
-                            token.isMxView = true;
-                        } else if ((a.name.startsWith('mx-') ||
+                    }
+
+                    tmplCommandAnchorReg.lastIndex = 0;
+                    if (tmplCommandAnchorReg.test(a.name)) {
+                        let src = tmplCmd.recover(a.name, cmds);
+                        let { line, art } = artExpr.extractCmdToArt(src);
+                        console.log(chalk.red(`[MXC-Error(tmpl-quick)] unsupport attr: ${art} at line ${line} at file: ${e.shortHTMLFile}`));
+                        continue;
+                    }
+
+                    if (a.name == 'mx-updateby' &&
+                        !a.unary) {
+                        token.updateByKeys = a.value;
+                        ignoreAttr = true;
+                    } else if (a.name == 'mx-bindexpr') {
+                        token.customBindExpr = true;
+                    } else if (a.name == 'mx-bindto' ||
+                        a.name == 'mx-bindfrom' ||
+                        a.name == 'mx-syncto' ||
+                        a.name == 'mx-syncfrom') {
+                        token.customHost = true;
+                    } else if (a.name == 'mx-syncexpr') {
+                        token.customBindExpr = true;
+                    } else if (a.name == 'mx-forexpr' ||
+                        a.name == 'mx-forbind') {
+                        token.customBindForExpr = true;
+                    } else if (a.name == 'mx-owner' ||
+                        a.name == mxPrefix + '-owner') {
+                        token.hasMxOwner = true;
+                    } else if (a.name == 'mx-host' ||
+                        a.name == mxPrefix + 'host') {
+                        token.bindHost = true;
+                    } else if (a.name == 'mx-view' ||
+                        a.name == 'mx5-view') {
+                        token.isMxView = true;
+                    } else if (!a.unary &&
+                        (a.name.startsWith('mx-') ||
                             a.name.startsWith(mxPrefix)) &&
-                            a.value.startsWith('\x1f')) {
-                            let i = a.name.indexOf('-');
-                            let e = a.name.substring(i + 1);
-                            token.hasMagixEvent = true;
-                            token.magixEvents[e] = 1;
-                        } else if (a.name == 'mx-ref' ||
-                            a.name == mxPrefix + '-ref') {
-                            token.hasMxRef = true;
-                        } else if (a.name == tmplMxViewParamKey) {
-                            ignoreAttr = true;
-                            token.mxViewParamValue = a;
-                        } else if (a.name == 'mx-key' ||
-                            a.name == mxPrefix + '-key') {
-                            ignoreAttr = true;
-                            token.mxKeyAttr = a;
+                        a.value.startsWith('\x1f')) {
+                        let i = a.name.indexOf('-');
+                        let e = a.name.substring(i + 1);
+                        token.hasMagixEvent = true;
+                        token.magixEvents[e] = 1;
+                    } else if (!a.unary && (a.name == 'x-html' ||
+                        a.name == 'inner-html' ||
+                        a.name == 'mx-html' ||
+                        a.name == mxPrefix + '-html' ||
+                        a.name == 'mx-safe-html' ||
+                        a.name == mxPrefix + '-safe-html')) {
+                        token.hasXHTML = true;
+                        token.xHTML = a.value;
+                        token.isSafe = a.name == 'mx-safe-html' ||
+                            a.name == mxPrefix + '-safe-html';
+                        if (a.cond) {
+                            token.cond = a.cond;
                         }
+                        ignoreAttr = true;
+                    } else if (a.name == 'mx-key' ||
+                        a.name == mxPrefix + '-key') {
+                        ignoreAttr = true;
+                        token.mxKeyAttr = a;
+                    } else if (a.name == 'mx-ctrl' ||
+                        a.name == mxPrefix + 'ctrl') {
+                        token.syncFromUI = true;
+                    } else if (!a.unary &&
+                        a.value.startsWith('\x07')) {
+                        a.value = a.value.replace(condEscapeReg, '$1?');
+                    } else if (!a.unary &&
+                        a.value.includes('\x1f')) {
+                        token.attrHasDynamicViewId = true;
+                        token.canHoisting = false;
+                    } else if (a.name == 'mx-ref' ||
+                        a.name == mxPrefix + '-ref') {
+                        token.hasMxRef = true;
+                    } else if (a.name == tmplMxViewParamKey) {
+                        ignoreAttr = true;
+                        token.mxViewParamValue = a;
                     }
                     if (!ignoreAttr) {
                         if (!a.unary) {
@@ -1252,9 +1542,9 @@ let Directives = {
             let art = `${open}${ctrl.art}}}${auto ? '' : '"'}`;
             start.push(`$__line=${ctrl.line};$__art=${JSON.stringify(art)};`);
             if (ctrl.asc) {
-                start.push(`$__ctrl=${JSON.stringify(`for(${decs};${ctrl.key}<${listCount};${ctrl.key}++){${initial}`)};`);
+                start.push(`$__ctrl=${JSON.stringify(`for(${decs};${ctrl.key}<${listCount};${ctrl.key}+=${ctrl.step}){${initial}`)};`);
             } else {
-                start.push(`$__ctrl=${JSON.stringify(`for(${decs};${ctrl.key}--;){${initial}`)};`);
+                start.push(`$__ctrl=${JSON.stringify(`for(${decs};${ctrl.key}>=0;${ctrl.key}-=${ctrl.step}){${initial}`)};`);
             }
         }
         //console.log(decs);
@@ -1530,8 +1820,11 @@ let process = (src, e, prefix) => {
         declaredRemoved = [],
         rebuildDeclared = [],
         rootCanHoisting = true;
-    let genElement = (node, level, inStaticNode,
+    let genElement = (node, level, inStaticNode, inContextNode,
         usedParentVars = {}, vnodePrefix = '$vnode') => {
+        if (inContextNode) {
+            vnodePrefix = '$slot';
+        }
         let levelPrefix = `${vnodePrefix}_${level}`;
         if (node.type == 3) {
             let content = node.content;
@@ -1749,8 +2042,8 @@ let process = (src, e, prefix) => {
                             continue;
                         }
                     }
-                    if (a.name.startsWith('mx') &&
-                        !a.name.startsWith(mxPrefix)) {
+                    if (a.name.startsWith('mx-') &&
+                        !a.name.startsWith(mxPrefix + '-')) {
                         a.name = mxPrefix + a.name.substring(2);
                     }
                     if (a.name.startsWith(mxPrefix) &&
@@ -1765,6 +2058,25 @@ let process = (src, e, prefix) => {
                             if (has) {
                                 a.value = `\x1f\x1e${offset || ''}\x1e` + a.value.substring(2);
                             }
+                        }
+                    }
+                    if (a.name == tmplTagReusedKey) {
+                        a.name = tmplShortMX.reused;
+                        if (configs.tmplSupportSlot) {
+                            a.value = `${staticUniqueKey} ${a.value}`;
+                        }
+                    }
+                    if (configs.tmplShortMX) {
+                        if (a.name == mxPrefix + '-view') {
+                            a.name = tmplShortMX.view;
+                        } else if (a.name == mxPrefix + '-owner') {
+                            a.name = tmplShortMX.owner;
+                        } else if (a.name == tmplMxViewParamKey) {
+                            a.name = tmplShortMX.viewParamsUsed;
+                        } else if (a.name == tmplStaticKey) {
+                            a.name = tmplShortMX.static;
+                        } else if (a.name.startsWith(mxPrefix + '-')) {
+                            a.name = tmplShortMX.commonPrefix + a.name.substring(mxPrefix.length + 1);
                         }
                     }
                     if (configs.tmplRadioOrCheckboxRename &&
@@ -1792,12 +2104,6 @@ let process = (src, e, prefix) => {
                         console.log(chalk.red('[MXC Tip(tmpl-quick)] duplicate attr:' + a.name), 'near:', chalk.magenta(node.tag + '->' + a.name + v), 'at file:', chalk.gray(e.shortHTMLFile));
                         continue;
                     }
-                    if (a.name == 'mx5-key') {
-                        a.name = '#';
-                        if (configs.tmplSupportSlot) {
-                            a.value = `${staticUniqueKey} ${a.value}`;
-                        }
-                    }
                     attrKeys[a.name] = 1;
                     let bProps = attrMap.getBooleanProps(node.tag, node.inputType);
                     let bAttr = bProps[a.name];
@@ -1815,6 +2121,12 @@ let process = (src, e, prefix) => {
                     let key = `$$_${utils.safeVar(a.name)}`;
                     let attr = serAttrs(key, a.value, !bAttr, e, inGroup);
                     attr.returned = toNumberString(attr.returned);
+                    // if (attr.direct &&
+                    //     attr.returned &&
+                    //     utils.isString(attr.returned) &&
+                    //     !attr.returned.includes('`')) {
+                    //     attr.returned = toTemplateString(attr.returned);
+                    // }
                     hasCtrl = attr.hasCtrl;
                     if (attr.hasCmdOut || attr.hasVarOut || a.cond) {
                         hasCmdOut = true;
@@ -2057,7 +2369,9 @@ let process = (src, e, prefix) => {
                         throw new Error('[MXC Tip(tmpl-quick)] tmplSupportSlotFn is false,can not use mx-slot fn attribute at file:' + e.shortHTMLFile);
                     }
                     let newKey = quickGroupObjectPrefix + node.groupKey;// //`${quickGroupObjectPrefix}${staticUniqueKey}_${safeVar(node.groupKey)}`;
-                    snippets.push(`\nif(!${newKey}){`);
+                    if (!node.groupContextHasOuterVar) {
+                        snippets.push(`\nif(!${newKey}){`);
+                    }
 
                     let params = '';// = `$id = $viewId`;
                     if (node.groupContext) {
@@ -2247,7 +2561,7 @@ let process = (src, e, prefix) => {
                     let nextLevel = isGroupTag ? level : level + 1;
                     let usedParent = {};
                     for (let e of node.children) {
-                        genElement(e, nextLevel, inStaticNode || node.canHoisting, usedParent);
+                        genElement(e, nextLevel, inStaticNode || node.canHoisting, inContextNode || node.groupContextNode, usedParent, vnodePrefix);
                     }
 
                     if (usedParent[`n${level + 1}`] ||
@@ -2357,7 +2671,10 @@ let process = (src, e, prefix) => {
                                 snippets.push(catchTmpl);
                             }
                         }
-                        snippets.push(`};\n}\n`);
+                        snippets.push(`};\n`);
+                        if (!node.groupContextHasOuterVar) {
+                            snippets.push(`}\n`);
+                        }
                     } else if (node.canHoisting) {
                         if (node.children.length) {
                             snippets.push(`$slots.${node.groupKey}=${vnodePrefix}_${level + 1};\n`);
@@ -2451,7 +2768,7 @@ let process = (src, e, prefix) => {
         }
     }
     for (let t of tokens) {
-        genElement(t, 0, rootCanHoisting);
+        genElement(t, 0, rootCanHoisting, t.groupContextNode);
     }
     let source = `$vnode_0${zeroIsEmptyArray ? '=[]' : ''}`;
     // if (configs.tmplSupportSlotFn) {

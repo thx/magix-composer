@@ -265,7 +265,7 @@ module.exports = {
         };
     },
     extractRefContent(cmd) {
-        let idx = cmd.indexOf(`,\x00xl\x00'`);
+        let idx = cmd.indexOf(`,\x00xl\x00`);
         if (idx > -1) {
             return {
                 succeed: true,

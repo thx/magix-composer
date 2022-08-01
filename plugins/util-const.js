@@ -170,6 +170,7 @@ module.exports = {
     tmplGroupUseAttr: '_t_:guse',
     tmplCondPrefix: '_t_:cond_',
     tmplGroupRootAttr: '_t_:root',
+    tmplGroupHasOuterVariable: '_t_:has_vars',
     tmplGroupStashAttr: '_t_:stash',
     tmplGroupId: '_t_:gid',
     tmplGroupParentId: '_t_:gpid',
@@ -178,6 +179,14 @@ module.exports = {
     tmplVarTempKey: '$temp_var',
     cssScopedVarPrefix: '--scoped-',
     tmplMxEventReg,
+    tmplShortMX: {
+        view: '_',
+        reused: '__',
+        owner: '_5',
+        viewParamsUsed: '$$',
+        static: '$',
+        commonPrefix: '_'
+    },
     styleImportReg: /^(ref|compiled)?@?([\w\.\-\/\\]+?(?:\.css|\.less|\.mx|\.mmx|\.style))$/,
     styleDependReg: /(?:\.css|\.less|\.mx|\.mmx|\.style)$/i,
     styleInJSFileReg: /(\(\s*)?(['"]?)\(?(ref|compiled)?\x12@:([\w\.\-\/\\]+?)(\.css|\.less|\.mx|\.mmx|\.style)(?::\.?([\w\-@$\(\)\{\},]+))?\)?\2(\s*\))?(;?)/g,

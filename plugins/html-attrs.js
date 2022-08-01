@@ -106,7 +106,7 @@ let escapeMap = {
     '\'': '&#27;'
 };
 
-let escapeSlashRegExp = /\\|'/g;
+let escapeSlashRegExp = /[\\'`]/g;
 let lineBreakReg = /\r\n?|\n|\u2028|\u2029/g;
 let escapeProcessor = m => escapeMap[m] || m;
 

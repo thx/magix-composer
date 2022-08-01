@@ -66,6 +66,7 @@ module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
         paramCount = paramsArray.length - 1;
     }
     let nextPrefix = hasAddParams ? '&' : '';
+    //console.log(match);
     match = match.replace(condReg, (m, cond, q, content) => {
         condObjects[cond] = content;
         return m;
@@ -115,6 +116,7 @@ module.exports = (match, e, refTmplCommands, baseAttrReg, nativePrefix) => {
                     if (ref.key) {
                         out += `,${ref.key}`;
                     }
+                    //console.log('----',out);
                     out += '%>';
                     attrs.push(`${art}<%if((${tmplVarTempKey}=${ref.vars})${ci.valuable ? '!=null' : ''}){%>${nextPrefix}${name}=${out}${postfix}<%}%>`);
                     attrsMap['${' + name + '}'] = `${art}<%if((${tmplVarTempKey}=${ref.vars})${ci.valuable ? '!=null' : ''}){%>${out}<%}%>`;

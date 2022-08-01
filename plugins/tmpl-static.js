@@ -104,8 +104,7 @@ module.exports = (tmpl, file, htmlUId) => {
                         n.hasMxRef ||
                         groupUseNonStatic ||
                         html.includes(magixSpliter) ||
-                        attr.includes(' mx-view=') ||
-                        attr.includes(' mx5-view=') ||
+                        n.hasMxView ||
                         tmplCommandAnchorRegTest.test(html)) {
                         keys.push(` ${tmplTempRealStaticKey}="${n.mxsRealKey}"`);
                     } else {
