@@ -50,7 +50,8 @@ let artExpr = require('./tmpl-art-ctrl');
 let {
     quickDirectTagName,
     quickCommandTagName,
-    quickDirectCodeAttr,
+    quickCtrlTagName,
+    quickCodeAttr,
     quickSpreadAttr,
     quickAutoAttr,
     quickOpenAttr,
@@ -93,7 +94,7 @@ let tmplUnescape = require('html-entities-decoder');
 let md5 = require('./util-md5');
 //let jsGeneric =require('./js-generic');
 //let isMethodReg = /^\s*[a-zA-Z0-9$_]+\([\s\S]+?\)\s*$/;
-let numString = /^'(-?[0-9]+(?:\.[0-9]+)?)'$/;
+let numString = /^(['"`])(-?[0-9]+(?:\.[0-9]+)?)\1$/;
 let chalk = require('ansis');
 //let jsGeneric = require('./js-generic');
 let viewIdReg = /\x1f/g;
@@ -111,6 +112,7 @@ let tmplCommandAnchorReg = /\x07\d+\x07/g;
 let ifExtractReg = /^\s*(?:for|if)\s*\(([\s\S]+?)\)\s*;?\s*$/;
 //let commaExprReg = /(?:,''\)|(%>'));/g;
 let directReg = /\{\{&[\s\S]+?\}\}/g;
+let ctrlReg = /\{\{\s*(break|continue);*\s*\}\}/g;
 let spreadAttrsReg = /\{\{(?:\*|\.{3})[\s\S]+?\}\}/g;
 let condPrefix = /^\x1c\d+\x1c/;
 let tagReg = /<(\/?)([^>\s]+)[^>]*>/g;
@@ -152,6 +154,7 @@ let encodeSlashRegExp = s => s.replace(escapeSlashRegExp, '\\$&');
 
 let dquoteReg = /"/g;
 let encodeDQuote = str => str.replace(dquoteReg, '&#34;');
+let attrEmptyText = /\$text\+?=(['"`])\s*\1/g;
 let storeInnerMatchedTags = (tmpl, store) => {
     let idx = store[tmplStoreIndexKey] || 0;
     return tmpl.replace(matchedTagReg, (m, prefix, tag, content, suffix) => {
@@ -259,7 +262,7 @@ let checkInFunctionSlot = (token, map, snippet, file) => {
 };
 let toNumberString = s => {
     if (numString.test(s)) {
-        let r = s.replace(numString, '$1');
+        let r = s.replace(numString, '$2');
         let fi = r.indexOf('.'),
             li = r.lastIndexOf('.'),
             fs = r.indexOf('-'),
@@ -582,7 +585,7 @@ let VAR = 1,
     STRING = 2,
     CTRL = 4,
     PARTIAL = 8;
-let toFn = (key, tmpl, fromAttr, e, inGroup) => {
+let toFn = (key, tmpl, e, inGroup) => {
     //tmpl = tmpl.replace(/%>\s+<%/g, '%><%');
     //console.log(tmpl);
     let index = 0,
@@ -602,7 +605,7 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
     let part = '';
     tmpl.replace(mathcer, (match, operate, content, offset) => {
         snippet = tmplUnescape(tmpl.substring(index, offset));
-        snippet = attrMap.escapeSlashAndBreak(snippet);
+        snippet = attrMap.escapeBreak(tmplCmd.escapeStringChars(snippet));
         if (snippet) {
             hasSnippet = hasSnippet || !content || !setStart;
             hasCharSnippet = hasCharSnippet || !!snippet.trim();
@@ -637,7 +640,7 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         let artReg = /^'(\d+)\x11([^\x11]+)\x11'$/;
         let artMatch = ctrl.match(artReg);
         let art = '', line = -1;
-        ctrl = attrMap.escapeSlashAndBreak(ctrl);
+        ctrl = attrMap.escapeBreak(tmplCmd.escapeStringChars(ctrl));
         if (artMatch) {
             ctrl = '';
             art = artMatch[2];
@@ -863,7 +866,7 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         subsOut) {
         source = `${key}=\`\`;${source}`;
     }
-    //console.log(source);
+    //console.log(tmpl, source);
     //source = source.replace(singleTemplate, '$1');
     //console.log(source);
     // if (configs.debug &&
@@ -894,7 +897,7 @@ let toFn = (key, tmpl, fromAttr, e, inGroup) => {
         hasCtrl
     };
 };
-let serAttrs = (key, value, fromAttr, e, inGroup) => {
+let serAttrs = (key, value, e, inGroup) => {
     if (value === true ||
         value === false) {
         return {
@@ -910,7 +913,7 @@ let serAttrs = (key, value, fromAttr, e, inGroup) => {
         hasCharSnippet,
         hasCmdOut,
         hasVarOut,
-        trimmedPrefix } = toFn(key, value, fromAttr, e, inGroup);
+        trimmedPrefix } = toFn(key, value, e, inGroup);
     if (hasCtrl && hasOut) {
         return {
             trimmedPrefix,
@@ -1028,16 +1031,23 @@ let parser = (tmpl, e) => {
             let aList = [],
                 auto = false;
             for (let a of attrs) {
-                if (a.name == quickDirectCodeAttr) {
+                if (a.name == quickCodeAttr) {
                     let t = tmplCmd.recover(a.value, cmds);
-                    let fi = extractArtAndCtrlFrom(t);
-                    if (fi.length > 1 || fi.length < 1) {
-                        throw new Error('[MXC-Error(tmpl-quick)] bad direct tag ' + t + ' at ' + e.shortHTMLFile);
+                    if (tag == quickDirectTagName) {
+                        let fi = extractArtAndCtrlFrom(t);
+                        if (fi.length > 1 || fi.length < 1) {
+                            throw new Error('[MXC-Error(tmpl-quick)] bad direct tag ' + t + ' at ' + e.shortHTMLFile);
+                        }
+                        fi = fi[0];
+                        token.directArt = fi.art;
+                        token.directLine = fi.line;
+                        token.directCtrl = fi.ctrl;
+                    } else if (quickCtrlTagName) {
+                        token.isCtrlNode = true;
+                        token.ctrl = t;
+                    } else {
+                        throw new Error(`[MXC-Error(tmpl-quick)] bad code tag ${t} at ${e.shortHTMLFile}`);
                     }
-                    fi = fi[0];
-                    token.directArt = fi.art;
-                    token.directLine = fi.line;
-                    token.directCtrl = fi.ctrl;
                 } else if (a.name == quickAutoAttr) {
                     auto = true;
                 } else if (a.name == quickEachAttr ||
@@ -1143,6 +1153,7 @@ let parser = (tmpl, e) => {
                 } else if (a.name == tmplGroupRootAttr) {
                     token.groupRootRefs = a.value;
                 } else if (a.name != quickDeclareAttr &&
+                    a.name != quickSourceArt &&
                     a.name != quickOpenAttr &&
                     !a.name.startsWith(tmplCondPrefix)) {
                     let ignoreAttr = false;
@@ -1588,9 +1599,11 @@ let preProcess = (src, e) => {
     let cmds = Object.create(null),
         tags = Object.create(null);
     src = src.replace(directReg, m => {
-        return `<${quickDirectTagName} ${quickDirectCodeAttr}="${m}"/>`;
+        return `<${quickDirectTagName} ${quickCodeAttr}="${m}"/>`;
     }).replace(spreadAttrsReg, m => {
         return `${quickSpreadAttr}="${m}"`;
+    }).replace(ctrlReg, (m, $1) => {
+        return `<${quickCtrlTagName} ${quickCodeAttr}="${$1}"/>`;
     });
     //console.log(src);
     src = artExpr.addLine(src);
@@ -1701,7 +1714,7 @@ let preProcess = (src, e) => {
                             prefix = quickOpenAttr + '="<%{%>" ';
                         }
                         //console.log(expr.value);
-                        return `${prefix}${quickDeclareAttr}="<%let ${expr.index},${expr.value}=${expr.iterator}[${expr.index}]${flv}%>" ${k}="<%'${li.line}\x11${attrMap.escapeSlashAndBreak(li.art)}\x11'%><%(${expr.value},${expr.index}${firstAndLastVars},${expr.asc ? 1 : -1},${expr.step}) in ${expr.iterator}%>"`;
+                        return `${prefix}${quickDeclareAttr}="<%let ${expr.index},${expr.value}=${expr.iterator}[${expr.index}]${flv}%>" ${k}="<%'${li.line}\x11${attrMap.escapeBreak(tmplCmd.escapeStringChars(li.art))}\x11'%><%(${expr.value},${expr.index}${firstAndLastVars},${expr.asc ? 1 : -1},${expr.step}) in ${expr.iterator}%>"`;
                     }
                     return _;
                 }).replace(quickConditionReg, (_, k, $, c) => {
@@ -1711,7 +1724,7 @@ let preProcess = (src, e) => {
                     if (li) {
                         let expr = artExpr.extractIfExpr(li.art);
                         let key = k == quickForAttr ? 'for' : 'if';
-                        return `${k}="<%'${li.line}\x11${attrMap.escapeSlashAndBreak(li.art)}\x11'%><%${key}(${expr});%>"`;
+                        return `${k}="<%'${li.line}\x11${attrMap.escapeBreak(tmplCmd.escapeStringChars(li.art))}\x11'%><%${key}(${expr});%>"`;
                     }
                     return _;
                 });
@@ -1811,6 +1824,7 @@ let process = (src, e, prefix) => {
         specialStaticVars = {},
         specialFlags = {},
         specialFlagIndex = 0,
+        staticProps = Object.create(null),
         staticNodes = Object.create(null),
         staticObjects = Object.create(null),
         staticCounter = 0,
@@ -1820,6 +1834,19 @@ let process = (src, e, prefix) => {
         declaredRemoved = [],
         rebuildDeclared = [],
         rootCanHoisting = true;
+    let getStaticProp = oldStr => {
+        let i = staticProps[oldStr];
+        if (i) {
+            oldStr = i.key;
+        } else {
+            let key = `$quick_${staticUniqueKey}_${staticCounter++}_static_prop`;
+            staticProps[oldStr] = {
+                key,
+            };
+            oldStr = key;
+        }
+        return oldStr;
+    };
     let genElement = (node, level, inStaticNode, inContextNode,
         usedParentVars = {}, vnodePrefix = '$vnode') => {
         if (inContextNode) {
@@ -1829,8 +1856,7 @@ let process = (src, e, prefix) => {
         if (node.type == 3) {
             let content = node.content;
             let cnt = tmplCmd.recover(content, cmds);
-            let text = serAttrs('$text', cnt, false, e);
-            //console.log(node, text);
+            let text = serAttrs('$text', cnt, e);
             if (node.isXHTML ||
                 text.hasCmdOut ||
                 text.hasCharSnippet) {
@@ -1838,6 +1864,11 @@ let process = (src, e, prefix) => {
                     safeguard = false;
                 if (text.direct) {
                     outText = text.returned;
+                    if (!text.hasCtrl &&
+                        !text.hasCmdOut &&
+                        !text.hasVarOut) {
+                        outText = getStaticProp(outText);
+                    }
                 } else {
                     snippets.push(text.returned + ';');
                     vnodeDeclares.$text = 1;
@@ -1900,6 +1931,7 @@ let process = (src, e, prefix) => {
                     vnodeDeclares.$text = 1;
                 }
                 let str = text.returned.trimEnd();
+                str = str.replace(attrEmptyText, '');
                 if (!str.endsWith(';')) {
                     str += ';';
                 }
@@ -2117,9 +2149,8 @@ let process = (src, e, prefix) => {
                     }
 
                     let oKey = encodeSlashRegExp(a.name);
-                    //console.log(a.name);
                     let key = `$$_${utils.safeVar(a.name)}`;
-                    let attr = serAttrs(key, a.value, !bAttr, e, inGroup);
+                    let attr = serAttrs(key, a.value, e, inGroup);
                     attr.returned = toNumberString(attr.returned);
                     // if (attr.direct &&
                     //     attr.returned &&
@@ -2215,7 +2246,15 @@ let process = (src, e, prefix) => {
                                 oKey
                             });
                         } else {
-                            attrs[oKey] = cond + attr.returned;
+                            let dv = cond + attr.returned;
+                            if (!cond &&
+                                attr.returned &&
+                                !attr.hasCtrl &&
+                                !attr.hasCmdOut &&
+                                !attr.hasVarOut) {
+                                dv = getStaticProp(dv);
+                            }
+                            attrs[oKey] = dv;
                         }
                     } else {
                         hasInlineCtrl = true;
@@ -2243,6 +2282,9 @@ let process = (src, e, prefix) => {
                 }
                 let allProps = attrMap.getProps(node.tag, node.inputType);
                 let mustUseProps = [];
+                if (node.tag == 'textarea') {
+                    mustUseProps.push(`_:1`);
+                }
                 if (hasInlineCtrl) {
                     if (hasRestElement) {
                         //console.log(ctrlAttrs);
@@ -2255,21 +2297,24 @@ let process = (src, e, prefix) => {
                         for (let p in attrs) {
                             attrsStr += `'${p}': ${attrs[p]},`;
                             if (allProps[p]) {
-                                mustUseProps.push(`'${p}':'${allProps[p]}'`);
+                                let dv = getStaticProp(`\`${allProps[p]}\``);
+                                mustUseProps.push(`'${p}':${dv}`);
                             }
                         }
                         for (let c of ctrlAttrs) {
                             if (c.type == 'direct') {
                                 attrsStr += `'${c.oKey}': ${c.ctrl},`;
                                 if (allProps[c.oKey]) {
-                                    mustUseProps.push(`'${c.oKey}':'${allProps[c.oKey]}'`);
+                                    let dv = getStaticProp(`\`${allProps[c.oKey]}\``);
+                                    mustUseProps.push(`'${c.oKey}':${dv}`);
                                 }
                             } else if (c.type == 'mixed') {
                                 attrsStr += `...${c.ctrl}, `;
                             } else if (c.oKey) {
                                 attrsStr += `'${c.oKey}': ${c.key},`;
                                 if (allProps[c.oKey]) {
-                                    mustUseProps.push(`'${c.oKey}':'${allProps[c.oKey]}'`);
+                                    let dv = getStaticProp(`\`${allProps[c.oKey]}\``);
+                                    mustUseProps.push(`'${c.oKey}':${dv}`);
                                 }
                             }
                         }
@@ -2283,14 +2328,16 @@ let process = (src, e, prefix) => {
                         for (let p in attrs) {
                             attrsStr += `'${p}': ${attrs[p]},`;
                             if (allProps[p]) {
-                                mustUseProps.push(`'${p}':'${allProps[p]}'`);
+                                let dv = getStaticProp(`\`${allProps[p]}\``);
+                                mustUseProps.push(`'${p}':${dv}`);
                             }
                         }
                         for (let c of ctrlAttrs) {
                             if (c.oKey) {
                                 attrsStr += `'${c.oKey}': ${c.key},`;
                                 if (allProps[c.oKey]) {
-                                    mustUseProps.push(`'${c.oKey}':'${allProps[c.oKey]}'`);
+                                    let dv = getStaticProp(`\`${allProps[c.oKey]}\``);
+                                    mustUseProps.push(`'${c.oKey}':${dv}`);
                                 }
                             }
                         }
@@ -2301,7 +2348,8 @@ let process = (src, e, prefix) => {
                     for (let p in attrs) {
                         attrsStr += `'${p}': ${attrs[p]},`;
                         if (allProps[p]) {
-                            mustUseProps.push(`'${p}':'${allProps[p]}'`);
+                            let dv = getStaticProp(`\`${allProps[p]}\``);
+                            mustUseProps.push(`'${p}':${dv}`);
                         }
                     }
                     attrsStr += '}';
@@ -2530,7 +2578,7 @@ let process = (src, e, prefix) => {
                     let exist = inlineStaticHTML[node.innerHTML];
                     let html = tmplCmd.getInnerHTML(node);
                     //html = tmplCmd.recover(html, cmds);
-                    html = attrMap.escapeSlashAndBreak(html);
+                    html = attrMap.escapeBreak(tmplCmd.escapeStringChars(html));
                     if (!exist) {
                         exist = {
                             count: 0,
@@ -2577,7 +2625,9 @@ let process = (src, e, prefix) => {
                     Object.assign(usedParentVars, usedParent);
                 }
             }
-            if (node.tag == quickCommandTagName) {
+            if (node.isCtrlNode) {
+                snippets.push(`${node.ctrl};`);
+            } else if (node.tag == quickCommandTagName) {
                 // if (node.children.length) {
                 //     if (vnodeInited[level]) {
                 //         combinePushed.push({
@@ -2713,14 +2763,16 @@ let process = (src, e, prefix) => {
                         if (!usedParentVars[`d${level}`]) {
                             usedParentVars[`n${level}`] = 1;
                         }
-                        src = `${levelPrefix}.push(${prefix}$createVNode('${node.tag}'${content}));`;
+                        let tag = getStaticProp(`\`${node.tag}\``);
+                        src = `${levelPrefix}.push(${prefix}$createVNode(${tag}${content}));`;
                         combinePushed.push({
                             key: levelPrefix,
                             src
                         });
                         snippets.push(src);
                     } else {
-                        src = `${levelPrefix}=[${prefix}$createVNode('${node.tag}'${content})];`;
+                        let tag = getStaticProp(`\`${node.tag}\``);
+                        src = `${levelPrefix}=[${prefix}$createVNode(${tag}${content})];`;
                         usedParentVars[`d${level}`] = 1;
                         vnodeInited[level] = 1;
                         combinePushed.push({
@@ -2910,6 +2962,15 @@ let process = (src, e, prefix) => {
     } else {
         source = `(${tmplGlobalDataRoot}, $createVNode,$viewId${params})${arrow} { \r\n${source} } `;
     }
+    let _staticPropsArr = [];
+    for (let i in staticProps) {
+        let v = staticProps[i];
+        _staticPropsArr.push({
+            key: v.key,
+            value: i
+        });
+    }
+    e._staticProps = _staticPropsArr;
     for (let i in staticObjects) {
         let v = staticObjects[i];
         if (!v.inStatic || v.used > 1) {

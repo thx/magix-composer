@@ -171,11 +171,11 @@ let processTmpl = async (fileContent, cssNamesMap, e, reject, lang, outString, q
     fileContent = idRemove(fileContent);
     let { source, statics } = tmplQuick.process(fileContent, e, prefix);
     for (let s of statics) {
-        let testKey = `~${s.key}`;
-        if (!quickStaticVars[testKey]) {
-            quickStaticVars[testKey] = 1;
-            quickStaticVars.push(s);
-        }
+        //let testKey = `~${s.key}`;
+        //if (!quickStaticVars[testKey]) {
+        //   quickStaticVars[testKey] = 1;
+        quickStaticVars.push(s);
+        //}
     }
     return source;
 };

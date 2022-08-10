@@ -57,9 +57,9 @@ let configs = require('./util-config');
 let chalk = require('ansis');
 let artExpr = require('./tmpl-art-ctrl');
 let htmlAttrs = require('./html-attrs');
+let tmplCmd = require('./tmpl-cmd');
 let ifForReg = /^\s*(if|for)\s*\(/;
 let longExpr = /[\.\[\]]/;
-let startReturnReg = /^[\r\n]+/;
 let ctrls = {
     'if'(stack, ln) {
         stack.push({
@@ -181,7 +181,7 @@ let syntax = (code, e, lineNo) => {
     //console.log(key, '@@', expr);
     let src = '';
     if (configs.debug) {
-        src = `<%'${lineNo}\x11${htmlAttrs.escapeSlashAndBreak(code)}\x11'%>`;
+        src = `<%'${lineNo}\x11${htmlAttrs.escapeBreak(tmplCmd.escapeStringChars(code))}\x11'%>`;
     }
     if (key == 'if') {
         expr = artExpr.extractIfExpr(expr);

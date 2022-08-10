@@ -26,6 +26,8 @@ let isLineArtCtrlsReg = /^<%'(\d+)\x11([^\x11]+)\x11'%>$/;
 let valuableAttrReg = /\x07\d+\x07\s*\?\?\s*/;
 let booleanAttrReg = /\x07\d+\x07\s*\?\s*/;
 
+let escapeSlashRegExp = /[\\'`$\{\}]/g;
+
 let getInnerHTML = (node, except = null, withOuter = false) => {
     if (node.type == 3) {
         if (node.isXHTML) {
@@ -78,6 +80,9 @@ let getInnerHTML = (node, except = null, withOuter = false) => {
 };
 module.exports = {
     getInnerHTML,
+    escapeStringChars(str) {
+        return str.replace(escapeSlashRegExp, '\\$&');
+    },
     compile(tmpl) {
         //特殊处理绑定事件及参数
         tmpl = tmpl.replace(bindReg2, (m, left, expr, right) => {

@@ -12,7 +12,7 @@ let tmplProcessor = require('./tmpl');
 let atpath = require('./util-atpath');
 let jsWrapper = require('./js-wrapper');
 let configs = require('./util-config');
-let md5 = require('./util-md5');
+//let md5 = require('./util-md5');
 let utils = require('./util');
 let cssClean = require('./css-clean');
 
@@ -20,6 +20,7 @@ let fileCache = require('./js-fcache');
 let jsReplacer = require('./js-replacer');
 let jsHeader = require('./js-header');
 let acorn = require('./js-acorn');
+let regexp = require('./util-rcache');
 let {
     revisableGReg,
     atViewPrefix,
@@ -385,13 +386,14 @@ let processContent = (from, to, content, inwatch) => {
         }
         return tmplProcessor(e);
     }).then(e => {
+        let content = e.content;
         if (e.addedWrapper) {
             let mxViews = e.tmplMxViewsArray || [];
             let addDeps = configs.tmplAddViewsToDependencies;
             if (e.noRequires || !addDeps) mxViews = [];
             mxViews = mxViews.concat(e.tmplComponents || []);
             let reqs = [],
-                vars = [];
+                preloads = [];
             for (let v of mxViews) {
                 let i = v.indexOf('/');
                 let mName = i === -1 ? v : v.substring(0, i);
@@ -426,7 +428,7 @@ let processContent = (from, to, content, inwatch) => {
                         raw: 'mx-view="' + v + '"'
                     };
                     let replacement = jsDeps.getReqReplacement(reqInfo, e, true);
-                    vars.push(replacement);
+                    preloads.push(replacement);
                     if (reqInfo.mId) {
                         let dId = JSON.stringify(reqInfo.mId);
                         reqs.push(dId);
@@ -443,17 +445,9 @@ let processContent = (from, to, content, inwatch) => {
                     reqs += ','
                 }
                 reqs += `"${e.magixModuleName}"`;
-                vars.push(e.magixExpression);
+                preloads.push(e.magixExpression);
             }
-            if (e.styleJITList.length) {
-                let cssContent = e.styleJITList.join('');
-                if (!configs.debug) {
-                    cssContent = cssClean.minify(cssContent);
-                }
-                e.content = e.content.replace(e.lastImportAnchorKey, `${e.magixVarName}.applyStyle(${JSON.stringify(e.styleJITNamesKey)},${JSON.stringify(cssContent)})`);
-            } else {
-                e.content = e.content.replace(e.lastImportAnchorKey, '');
-            }
+            let vars = [];
             if (e.quickStaticVars) {
                 for (let v of e.quickStaticVars) {
                     let c = `let ${v.key}`;
@@ -464,11 +458,42 @@ let processContent = (from, to, content, inwatch) => {
                     vars.push(c);
                 }
             }
-            e.content = e.content.replace(e.requiresAnchorKey, reqs);
-            e.content = e.content.replace(e.varsAnchorKey, vars.join('\r\n'));
+            let staticProps = e._staticProps;
+            let outputsVars = vars.join('\r\n');
+            let preVars = [];
+            if (staticProps &&
+                staticProps.length) {
+                for (let { key, value } of staticProps) {
+                    if ((outputsVars.includes(key) &&
+                        content.includes(key)) ||
+                        outputsVars.indexOf(key) != outputsVars.lastIndexOf(key) ||
+                        content.indexOf(key) != content.lastIndexOf(key)) {
+                        preVars.push(`let ${key}=${value};\r\n`);
+                    } else {
+                        let v = regexp.encode(value);
+                        content = content.replace(key, v);
+                        outputsVars = outputsVars.replace(key, v);
+                    }
+                }
+            }
+            //console.log(content, preVars, outputsVars);
+            let jit = '';
+            if (e.styleJITList.length) {
+                let cssContent = e.styleJITList.join('');
+                if (!configs.debug) {
+                    cssContent = cssClean.minify(cssContent);
+                }
+                jit = `${e.magixVarName}.applyStyle(${JSON.stringify(e.styleJITNamesKey)},${JSON.stringify(cssContent)});\r\n`;
+                //content = content.replace(e.lastImportAnchorKey, );
+            } else {
+                //content = content.replace(e.lastImportAnchorKey, '');
+            }
+            content = content.replace(e.requiresAnchorKey, regexp.encode(reqs));
+            content = content.replace(e.lastImportAnchorKey, regexp.encode(preloads.join('\r\n') + '\r\n' + jit + preVars.join('') + outputsVars));
         } else {
-            e.content = e.content.replace(e.lastImportAnchorKey, '');
+            content = content.replace(e.lastImportAnchorKey, '');
         }
+        e.content = content;
         return e;
     }).then(e => {
         e.content = e.content.replace(selfCssRefReg, (_, prefix, key) => {

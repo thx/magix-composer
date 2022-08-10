@@ -21,6 +21,7 @@ let regexp = require('./util-rcache');
 let {
     //quickCommandTagName,
     //quickDirectTagName,
+    quickCtrlTagName,
     tmplTempRealStaticKey,
     //tmplTempInlineStaticKey,
     //tmplTempStaticKey,
@@ -68,7 +69,7 @@ module.exports = (tmpl, file, htmlUId) => {
                     //     n.pId) {
                     //     throw new Error(`[MXC(tmpl-static)] mx-slot key="${n.groupKey}" can not nested in other elements at file:` + file);
                     // }
-                    let attr = tmpl.substring(n.attrsStart, n.attrsEnd);
+                    //let attr = tmpl.substring(n.attrsStart, n.attrsEnd);
                     let html = tmpl.substring(n.start, n.end)
                         .replace(staticRealKeyReg, '');
                     //.replace(inlineStaticRealKeyReg, '');
@@ -100,7 +101,8 @@ module.exports = (tmpl, file, htmlUId) => {
                     let groupUseNonStatic = n.groupUseNode &&
                         !groupStaticNodes[n.groupUse];
                     n.groupUseNonStatic = groupUseNonStatic;
-                    if (n.hasMxEvent ||
+                    if (n.tag == quickCtrlTagName ||
+                        n.hasMxEvent ||
                         n.hasMxRef ||
                         groupUseNonStatic ||
                         html.includes(magixSpliter) ||

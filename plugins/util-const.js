@@ -1,5 +1,5 @@
 let crypto = require('crypto');
-let trimSemicolons = /;+/g;
+let trimSemicolons = /\s*;+\s*/g;
 let trimEndSemicolon = /;$/;
 let trimSpaceAroundColon = /\s*:\s*/g;
 let hasCmdReg = /\x07\d+\x07/;
@@ -140,7 +140,8 @@ module.exports = {
     quickPlaceholderTagName: 'qk:ph',
     quickDirectTagName: 'qk:direct',
     quickCommandTagName: 'qk:cmd',
-    quickDirectCodeAttr: 'qk:code',
+    quickCtrlTagName: 'qk:ctrl',
+    quickCodeAttr: 'qk:code',
     quickSpreadAttr: 'qk:spread',
     quickAutoAttr: 'qk:auto',
     quickOpenAttr: 'qk:open',

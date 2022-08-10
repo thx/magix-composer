@@ -106,7 +106,6 @@ let escapeMap = {
     '\'': '&#27;'
 };
 
-let escapeSlashRegExp = /[\\'`]/g;
 let lineBreakReg = /\r\n?|\n|\u2028|\u2029/g;
 let escapeProcessor = m => escapeMap[m] || m;
 
@@ -131,8 +130,8 @@ module.exports = {
     escapeURI(v) {
         return encodeURIComponent(v).replace(encodeMoreReg, encodeReplacor);
     },
-    escapeSlashAndBreak(attr) {
-        return attr.replace(escapeSlashRegExp, '\\$&').replace(lineBreakReg, '\\n')
+    escapeBreak(attr) {
+        return attr.replace(lineBreakReg, '\\n')
     },
     escapeAttr(attr) {
         return attr.replace(escapeReg, escapeProcessor).replace(lineBreakReg, '\\n');

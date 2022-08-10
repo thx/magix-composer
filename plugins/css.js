@@ -29,6 +29,7 @@ let {
 //    color:red
 //}
 let cssVarReg = /var\s*\(\s*([^)\s]+)\s*(?=[,)])/g;
+let cssValidVars = /^[a-zA-Z0-9\-]+/g;
 let cssAtRefReg = /(['"])\s*ref@:([^:]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style):@(font-face|keyframes)\(([\s\S]+?)\)\1/g;
 let cssCommonRefReg = /(['"])\s*ref@:([^:]+?)(\.css|\.less|\.scss|\.mx|\.mmx|\.style)#([\s\S]+?)\1/g;
 let sep = path.sep;
@@ -289,10 +290,18 @@ module.exports = e => {
                             let c,
                                 postfix = '';
                             cssVarReg.lastIndex = 0;
-                            if (cssVarReg.test(key)) {
+                            if (cssVarReg.test(key) ||
+                                key.startsWith('--')) {
                                 cssVarReg.lastIndex = 0;
-                                key = key.trim().slice(4, -1);
-                                let silent = false;
+                                let tail = '';
+                                if (!key.startsWith('--')) {
+                                    key = key.slice(4, -1);
+                                }
+                                tail = key.replace(cssValidVars, '');
+                                if (tail) {
+                                    key = key.slice(0, -tail.length);
+                                }
+                                //let silent = false;
                                 let { isGlobal, key: k2 } = cssTransform.processVar(key);
                                 if (isGlobal) {
                                     c = k2;
@@ -300,13 +309,14 @@ module.exports = e => {
                                     c = cssVarsMap[key];
                                     if (!c) {
                                         if (configs.selectorSilentErrorCss) {
-                                            silent = true;
+                                            //silent = true;
                                             c = `${prefix || ''}@:${name}${ext}:${key}`;
                                         } else {
                                             c = 'unfound-[' + key + ']-from-' + fileName;
                                         }
                                     }
                                 }
+                                c += tail;
                                 // if (!silent) {
                                 storeHostUsed('vars', scopedStyle, file, key, isGlobal);
                                 //}

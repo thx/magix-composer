@@ -1407,7 +1407,7 @@ module.exports = {
                     for (; i <= max; i++) {
                         let sk = sKeys[i];
                         if (sk.startsWith(`'`)) {
-                            rKeys.push(htmlAttrs.escapeKeyCharsURI(sk).slice(1, -1));
+                            rKeys.push(tmplCmd.escapeStringChars(htmlAttrs.escapeKeyCharsURI(sk).slice(1, -1)));
                         } else {
                             rKeys.push(`\${${sk.slice(1, -1)}}`);
                         }
